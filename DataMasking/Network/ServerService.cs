@@ -36,9 +36,9 @@ namespace DataMasking.Network
             tcpListener = new TcpListener(IPAddress.Any, port);
             tcpListener.Start();
             isRunning = true;
-            
+
             TransmissionLogger.Log($"SERVER: Đã khởi động trên port {port}");
-            
+
             // Lắng nghe client connections
             Task.Run(() => ListenForClients());
         }
@@ -62,7 +62,7 @@ namespace DataMasking.Network
                 {
                     TcpClient client = await tcpListener.AcceptTcpClientAsync();
                     TransmissionLogger.Log($"SERVER: Client đã kết nối từ {client.Client.RemoteEndPoint}");
-                    
+
                     // Xử lý client trong task riêng
                     Task.Run(() => HandleClient(client));
                 }
@@ -83,14 +83,14 @@ namespace DataMasking.Network
             try
             {
                 stream = client.GetStream();
-                
+
                 // Đọc kích thước packet (4 bytes)
                 byte[] sizeBuffer = new byte[4];
                 await stream.ReadAsync(sizeBuffer, 0, 4);
                 int packetSize = BitConverter.ToInt32(sizeBuffer, 0);
-                
+
                 TransmissionLogger.Log($"SERVER: Đang nhận packet ({packetSize} bytes)...");
-                
+
                 // Đọc packet data
                 byte[] packetBuffer = new byte[packetSize];
                 int totalRead = 0;
@@ -100,24 +100,24 @@ namespace DataMasking.Network
                     if (read == 0) break;
                     totalRead += read;
                 }
-                
+
                 TransmissionLogger.Log($"SERVER: Đã nhận {totalRead} bytes");
-                
+
                 // Deserialize packet
                 string packetJson = Encoding.UTF8.GetString(packetBuffer);
                 TransmissionPacket packet = JsonSerializer.Deserialize<TransmissionPacket>(packetJson);
-                
+
                 // Xử lý request
                 ServerResponse response = ProcessSecureRequest(packet);
-                
+
                 // Gửi response về client
                 string responseJson = JsonSerializer.Serialize(response);
                 byte[] responseBytes = Encoding.UTF8.GetBytes(responseJson);
                 byte[] responseSizeBytes = BitConverter.GetBytes(responseBytes.Length);
-                
+
                 await stream.WriteAsync(responseSizeBytes, 0, 4);
                 await stream.WriteAsync(responseBytes, 0, responseBytes.Length);
-                
+
                 TransmissionLogger.Log($"SERVER: Đã gửi response ({responseBytes.Length} bytes)");
             }
             catch (Exception ex)
@@ -135,7 +135,7 @@ namespace DataMasking.Network
         public ServerResponse ProcessSecureRequest(TransmissionPacket packet)
         {
             TransmissionLogger.LogServerReceive(packet.EncryptedData, packet.EncryptedAESKey);
-            
+
             try
             {
                 // Bước 1: Giải mã AES key bằng RSA Private Key
@@ -143,9 +143,9 @@ namespace DataMasking.Network
                 RSA rsa = new RSA(serverKeyPair.N, serverKeyPair.E, serverKeyPair.D);
                 byte[] encryptedKeyBytes = Convert.FromBase64String(packet.EncryptedAESKey);
                 byte[] aesKeyBytes = rsa.Decrypt(encryptedKeyBytes);
-                
+
                 TransmissionLogger.Log($"SERVER: Đã giải mã AES key (length: {aesKeyBytes.Length} bytes)");
-                
+
                 // Đảm bảo key đúng kích thước 32 bytes
                 byte[] aesKey = new byte[32];
                 if (aesKeyBytes.Length >= 32)
@@ -157,29 +157,29 @@ namespace DataMasking.Network
                     // Nếu key ngắn hơn, copy toàn bộ và pad với 0
                     Array.Copy(aesKeyBytes, aesKey, aesKeyBytes.Length);
                 }
-                
+
                 // Bước 2: Giải mã dữ liệu bằng AES key
                 TransmissionLogger.Log("SERVER: Đang giải mã dữ liệu bằng AES-256...");
                 byte[] encryptedDataBytes = Convert.FromBase64String(packet.EncryptedData);
                 byte[] ivBytes = Convert.FromBase64String(packet.IV);
-                
+
                 TransmissionLogger.Log($"SERVER: Encrypted data size: {encryptedDataBytes.Length} bytes, IV size: {ivBytes.Length} bytes");
-                
+
                 AES aes = new AES(aesKey);
                 byte[] decryptedBytes = aes.DecryptCBC(encryptedDataBytes, ivBytes);
-                
+
                 TransmissionLogger.Log($"SERVER: Decrypted bytes length: {decryptedBytes.Length}");
-                
+
                 // Kiểm tra dữ liệu giải mã có hợp lệ không
                 string decryptedJson = Encoding.UTF8.GetString(decryptedBytes);
-                
+
                 // Log an toàn (tránh ký tự lỗi)
                 string safeLog = decryptedJson.Length > 150 ? decryptedJson.Substring(0, 150) + "..." : decryptedJson;
                 TransmissionLogger.LogServerDecrypt(safeLog);
-                
+
                 // Bước 3: Parse JSON
                 var data = JsonSerializer.Deserialize<SensitiveDataModel>(decryptedJson);
-                
+
                 // Bước 4: Lưu vào database
                 TransmissionLogger.Log("SERVER: Đang lưu dữ liệu vào database...");
                 int id = dbManager.InsertSensitiveData(
@@ -187,28 +187,36 @@ namespace DataMasking.Network
                     data.creditCard, data.ssn, data.address
                 );
                 TransmissionLogger.Log($"SERVER: Đã lưu vào database với ID: {id}");
-                
-                // Bước 5: Tạo response với dữ liệu masked
+
+                // Bước 5: Parse masking type từ client
+                MaskingType maskingType = MaskingType.CharacterMask;
+                if (!string.IsNullOrEmpty(data.maskingType))
+                {
+                    Enum.TryParse(data.maskingType, out maskingType);
+                }
+                TransmissionLogger.Log($"SERVER: Áp dụng masking type: {maskingType}");
+
+                // Bước 6: Tạo response với dữ liệu masked
                 ServerResponse response = new ServerResponse
                 {
                     Success = true,
                     RecordId = id,
                     MaskedData = new MaskedDataModel
                     {
-                        FullName = maskingService.MaskName(data.fullName),
-                        Email = maskingService.MaskEmail(data.email),
-                        Phone = maskingService.MaskPhone(data.phone),
-                        CreditCard = maskingService.MaskCreditCard(data.creditCard),
-                        SSN = maskingService.MaskSSN(data.ssn),
-                        Address = maskingService.MaskAddress(data.address)
+                        FullName = maskingService.ApplyMasking(data.fullName, "name", maskingType),
+                        Email = maskingService.ApplyMasking(data.email, "email", maskingType),
+                        Phone = maskingService.ApplyMasking(data.phone, "phone", maskingType),
+                        CreditCard = maskingService.ApplyMasking(data.creditCard, "creditcard", maskingType),
+                        SSN = maskingService.ApplyMasking(data.ssn, "ssn", maskingType),
+                        Address = maskingService.ApplyMasking(data.address, "address", maskingType)
                     },
                     Message = "Dữ liệu đã được lưu thành công"
                 };
-                
+
                 // Log response
                 string maskedJson = JsonSerializer.Serialize(response.MaskedData, new JsonSerializerOptions { WriteIndented = true });
                 TransmissionLogger.LogServerResponse(maskedJson);
-                
+
                 return response;
             }
             catch (Exception ex)
@@ -232,6 +240,7 @@ namespace DataMasking.Network
         public string creditCard { get; set; }
         public string ssn { get; set; }
         public string address { get; set; }
+        public string maskingType { get; set; }
     }
 
     // Model dữ liệu đã che giấu
