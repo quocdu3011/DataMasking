@@ -1,6 +1,9 @@
 using System;
 using System.Text;
 using System.Text.Json;
+using System.Net;
+using System.Net.Sockets;
+using System.Threading.Tasks;
 using DataMasking.Crypto;
 using DataMasking.Key;
 using DataMasking.Database;
@@ -8,18 +11,124 @@ using DataMasking.Masking;
 
 namespace DataMasking.Network
 {
-    // Mô phỏng Server - Nhận và giải mã dữ liệu
+    // Server - Nhận và giải mã dữ liệu qua TCP
     public class ServerService
     {
         private RSAKeyPair serverKeyPair;
         private DatabaseManager dbManager;
         private MaskingService maskingService;
+        private TcpListener tcpListener;
+        private bool isRunning;
 
         public ServerService(RSAKeyPair serverKeyPair, DatabaseManager dbManager)
         {
             this.serverKeyPair = serverKeyPair;
             this.dbManager = dbManager;
             this.maskingService = new MaskingService();
+            this.isRunning = false;
+        }
+
+        // Khởi động server
+        public void Start(int port = 8888)
+        {
+            if (isRunning) return;
+
+            tcpListener = new TcpListener(IPAddress.Any, port);
+            tcpListener.Start();
+            isRunning = true;
+            
+            TransmissionLogger.Log($"SERVER: Đã khởi động trên port {port}");
+            
+            // Lắng nghe client connections
+            Task.Run(() => ListenForClients());
+        }
+
+        // Dừng server
+        public void Stop()
+        {
+            if (!isRunning) return;
+
+            isRunning = false;
+            tcpListener?.Stop();
+            TransmissionLogger.Log("SERVER: Đã dừng");
+        }
+
+        // Lắng nghe client connections
+        private async void ListenForClients()
+        {
+            while (isRunning)
+            {
+                try
+                {
+                    TcpClient client = await tcpListener.AcceptTcpClientAsync();
+                    TransmissionLogger.Log($"SERVER: Client đã kết nối từ {client.Client.RemoteEndPoint}");
+                    
+                    // Xử lý client trong task riêng
+                    Task.Run(() => HandleClient(client));
+                }
+                catch (Exception ex)
+                {
+                    if (isRunning)
+                    {
+                        TransmissionLogger.Log($"SERVER ERROR: {ex.Message}");
+                    }
+                }
+            }
+        }
+
+        // Xử lý client request
+        private async void HandleClient(TcpClient client)
+        {
+            NetworkStream stream = null;
+            try
+            {
+                stream = client.GetStream();
+                
+                // Đọc kích thước packet (4 bytes)
+                byte[] sizeBuffer = new byte[4];
+                await stream.ReadAsync(sizeBuffer, 0, 4);
+                int packetSize = BitConverter.ToInt32(sizeBuffer, 0);
+                
+                TransmissionLogger.Log($"SERVER: Đang nhận packet ({packetSize} bytes)...");
+                
+                // Đọc packet data
+                byte[] packetBuffer = new byte[packetSize];
+                int totalRead = 0;
+                while (totalRead < packetSize)
+                {
+                    int read = await stream.ReadAsync(packetBuffer, totalRead, packetSize - totalRead);
+                    if (read == 0) break;
+                    totalRead += read;
+                }
+                
+                TransmissionLogger.Log($"SERVER: Đã nhận {totalRead} bytes");
+                
+                // Deserialize packet
+                string packetJson = Encoding.UTF8.GetString(packetBuffer);
+                TransmissionPacket packet = JsonSerializer.Deserialize<TransmissionPacket>(packetJson);
+                
+                // Xử lý request
+                ServerResponse response = ProcessSecureRequest(packet);
+                
+                // Gửi response về client
+                string responseJson = JsonSerializer.Serialize(response);
+                byte[] responseBytes = Encoding.UTF8.GetBytes(responseJson);
+                byte[] responseSizeBytes = BitConverter.GetBytes(responseBytes.Length);
+                
+                await stream.WriteAsync(responseSizeBytes, 0, 4);
+                await stream.WriteAsync(responseBytes, 0, responseBytes.Length);
+                
+                TransmissionLogger.Log($"SERVER: Đã gửi response ({responseBytes.Length} bytes)");
+            }
+            catch (Exception ex)
+            {
+                TransmissionLogger.Log($"SERVER ERROR handling client: {ex.Message}");
+            }
+            finally
+            {
+                stream?.Close();
+                client?.Close();
+            }
         }
 
         // Server nhận và xử lý request

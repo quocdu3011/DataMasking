@@ -16,6 +16,7 @@ namespace DataMasking
         private RSAKeyPair serverKeyPair;  // Server's RSA key pair
         private ClientService clientService;
         private ServerService serverService;
+        private bool isServerRunning = false;
         
         // Controls
         private TabControl tabControl;
@@ -24,8 +25,10 @@ namespace DataMasking
         private TextBox txtTransmissionLog;
         private ComboBox cboEncryptionType;
         private Button btnAdd, btnMask, btnEncrypt, btnRefresh, btnDelete, btnInitDB, btnAddSample;
-        private Label lblStatus;
+        private Button btnStartServer, btnStopServer;
+        private Label lblStatus, lblServerStatus;
         private TextBox txtConnectionString;
+        private ProgressBar progressServer;
 
         public Main()
         {
@@ -40,7 +43,7 @@ namespace DataMasking
             serverKeyPair = new RSAKeyPair(1024);
             
             // Khởi tạo Client và Server services
-            clientService = new ClientService(serverKeyPair);  // Client chỉ có public key
+            clientService = new ClientService(serverKeyPair, "127.0.0.1", 8888);  // Client kết nối đến localhost:8888
             serverService = new ServerService(serverKeyPair, dbManager);  // Server có cả private key
             
             // Khởi tạo UI sau khi có serverKeyPair
@@ -64,34 +67,102 @@ namespace DataMasking
 
         private void InitializeCustomComponents()
         {
-            this.Text = "Data Masking System - Mô phỏng Client-Server với Mã hóa Kênh truyền";
-            this.Size = new Size(1400, 800);
+            this.Text = "Data Masking System - Client-Server TCP Network";
+            this.Size = new Size(1500, 850);
             this.StartPosition = FormStartPosition.CenterScreen;
 
-            // Connection String
+            // Connection String - Dòng 1
             Label lblConn = new Label { Text = "Connection String:", Location = new Point(20, 15), AutoSize = true };
             this.Controls.Add(lblConn);
 
             txtConnectionString = new TextBox
             {
                 Location = new Point(140, 12),
-                Size = new Size(600, 25),
+                Size = new Size(500, 25),
                 Text = "Server=36.50.54.109;Port=3306;Database=datamasking_db;Uid=anonymous;Pwd=1;"
             };
             this.Controls.Add(txtConnectionString);
 
-            btnInitDB = new Button { Text = "Khởi tạo DB", Location = new Point(750, 10), Size = new Size(100, 30) };
+            btnInitDB = new Button { Text = "Khởi tạo DB", Location = new Point(650, 10), Size = new Size(100, 30) };
             btnInitDB.Click += BtnInitDB_Click;
             this.Controls.Add(btnInitDB);
 
-            btnAddSample = new Button { Text = "Thêm dữ liệu mẫu", Location = new Point(860, 10), Size = new Size(130, 30) };
+            btnAddSample = new Button { Text = "Thêm dữ liệu mẫu", Location = new Point(760, 10), Size = new Size(130, 30) };
             btnAddSample.Click += BtnAddSample_Click;
             this.Controls.Add(btnAddSample);
+
+            // Server Controls - Dòng 2
+            Label lblServerControl = new Label 
+            { 
+                Text = "SERVER CONTROL:", 
+                Location = new Point(20, 55), 
+                AutoSize = true,
+                Font = new Font("Arial", 9, FontStyle.Bold),
+                ForeColor = Color.DarkBlue
+            };
+            this.Controls.Add(lblServerControl);
+
+            btnStartServer = new Button 
+            { 
+                Text = "▶ START SERVER", 
+                Location = new Point(150, 50), 
+                Size = new Size(130, 35),
+                BackColor = Color.Green,
+                ForeColor = Color.White,
+                Font = new Font("Arial", 9, FontStyle.Bold)
+            };
+            btnStartServer.Click += BtnStartServer_Click;
+            this.Controls.Add(btnStartServer);
+
+            btnStopServer = new Button 
+            { 
+                Text = "⏹ STOP SERVER", 
+                Location = new Point(290, 50), 
+                Size = new Size(130, 35),
+                BackColor = Color.Red,
+                ForeColor = Color.White,
+                Font = new Font("Arial", 9, FontStyle.Bold),
+                Enabled = false
+            };
+            btnStopServer.Click += BtnStopServer_Click;
+            this.Controls.Add(btnStopServer);
+
+            lblServerStatus = new Label
+            {
+                Text = "● Server: STOPPED",
+                Location = new Point(430, 58),
+                AutoSize = true,
+                ForeColor = Color.Red,
+                Font = new Font("Arial", 10, FontStyle.Bold)
+            };
+            this.Controls.Add(lblServerStatus);
+
+            // Progress Bar
+            progressServer = new ProgressBar
+            {
+                Location = new Point(600, 55),
+                Size = new Size(200, 25),
+                Style = ProgressBarStyle.Marquee,
+                MarqueeAnimationSpeed = 30,
+                Visible = false
+            };
+            this.Controls.Add(progressServer);
+
+            Label lblProgress = new Label
+            {
+                Name = "lblProgress",
+                Text = "",
+                Location = new Point(810, 58),
+                Size = new Size(200, 20),
+                ForeColor = Color.Blue,
+                Font = new Font("Arial", 8, FontStyle.Italic)
+            };
+            this.Controls.Add(lblProgress);
 
             // Tab Control
             tabControl = new TabControl
             {
-                Location = new Point(20, 50),
+                Location = new Point(20, 95),
                 Size = new Size(900, 580)
             };
 
@@ -126,7 +197,7 @@ namespace DataMasking
             Label lblLog = new Label 
             { 
                 Text = "KÊNH TRUYỀN (Transmission Log)", 
-                Location = new Point(930, 50), 
+                Location = new Point(930, 95), 
                 AutoSize = true,
                 Font = new Font("Arial", 10, FontStyle.Bold)
             };
@@ -134,8 +205,8 @@ namespace DataMasking
 
             txtTransmissionLog = new TextBox
             {
-                Location = new Point(930, 75),
-                Size = new Size(440, 555),
+                Location = new Point(930, 120),
+                Size = new Size(540, 555),
                 Multiline = true,
                 ScrollBars = ScrollBars.Vertical,
                 ReadOnly = true,
@@ -148,7 +219,7 @@ namespace DataMasking
             Button btnClearLog = new Button 
             { 
                 Text = "Xóa Log", 
-                Location = new Point(1270, 50), 
+                Location = new Point(1370, 95), 
                 Size = new Size(100, 20),
                 Font = new Font("Arial", 8)
             };
@@ -159,7 +230,7 @@ namespace DataMasking
             lblStatus = new Label
             {
                 Text = "Sẵn sàng - Server RSA Key đã được tạo",
-                Location = new Point(20, 640),
+                Location = new Point(20, 685),
                 AutoSize = true,
                 ForeColor = Color.Green,
                 Font = new Font("Arial", 10, FontStyle.Bold)
@@ -173,8 +244,8 @@ namespace DataMasking
             Label lblServerInfo = new Label
             {
                 Text = $"Server Public Key (Base64): {displayKey}",
-                Location = new Point(20, 665),
-                Size = new Size(1350, 20),
+                Location = new Point(20, 710),
+                Size = new Size(1450, 20),
                 ForeColor = Color.Blue,
                 Font = new Font("Consolas", 8)
             };
@@ -183,12 +254,22 @@ namespace DataMasking
             Label lblServerInfo2 = new Label
             {
                 Text = $"RSA Key Size: 1024-bit | E (Public Exponent): {serverKeyPair.E}",
-                Location = new Point(20, 685),
+                Location = new Point(20, 730),
                 AutoSize = true,
                 ForeColor = Color.DarkGreen,
                 Font = new Font("Arial", 8)
             };
             this.Controls.Add(lblServerInfo2);
+
+            Label lblInstruction = new Label
+            {
+                Text = "📌 Hướng dẫn: 1) Click START SERVER → 2) Vào tab Client → 3) Nhập dữ liệu → 4) Click Gửi đến Server",
+                Location = new Point(20, 755),
+                Size = new Size(1450, 20),
+                ForeColor = Color.DarkOrange,
+                Font = new Font("Arial", 9, FontStyle.Bold)
+            };
+            this.Controls.Add(lblInstruction);
         }
 
         private void InitializeInputTab(TabPage tab)
@@ -548,70 +629,158 @@ namespace DataMasking
                     return;
                 }
 
+                if (!isServerRunning)
+                {
+                    MessageBox.Show("Server chưa được khởi động! Vui lòng Start Server trước.", "Thông báo");
+                    return;
+                }
+
                 // Clear log trước
                 txtTransmissionLog.Clear();
 
-                // CLIENT: Tạo và mã hóa request
-                TransmissionPacket packet = clientService.CreateSecureRequest(
-                    txtName.Text, txtEmail.Text, txtPhone.Text,
-                    txtCard.Text, txtSSN.Text, txtAddress.Text
-                );
-
-                // Mô phỏng truyền qua mạng (delay nhỏ)
-                System.Threading.Thread.Sleep(100);
-
-                // SERVER: Nhận và xử lý request
-                ServerResponse response = serverService.ProcessSecureRequest(packet);
-
-                if (response.Success)
+                // CLIENT: Gửi request qua TCP
+                Task.Run(async () =>
                 {
-                    // Tạo JSON response
-                    var jsonResponse = new
+                    ServerResponse response = await clientService.SendSecureRequestAsync(
+                        txtName.Text, txtEmail.Text, txtPhone.Text,
+                        txtCard.Text, txtSSN.Text, txtAddress.Text
+                    );
+
+                    // Update UI trên main thread
+                    this.Invoke(new Action(() =>
                     {
-                        success = true,
-                        recordId = response.RecordId,
-                        message = response.Message,
-                        maskedData = new
+                        if (response.Success)
                         {
-                            fullName = response.MaskedData.FullName,
-                            email = response.MaskedData.Email,
-                            phone = response.MaskedData.Phone,
-                            creditCard = response.MaskedData.CreditCard,
-                            ssn = response.MaskedData.SSN,
-                            address = response.MaskedData.Address
+                            // Tạo JSON response
+                            var jsonResponse = new
+                            {
+                                success = true,
+                                recordId = response.RecordId,
+                                message = response.Message,
+                                maskedData = new
+                                {
+                                    fullName = response.MaskedData.FullName,
+                                    email = response.MaskedData.Email,
+                                    phone = response.MaskedData.Phone,
+                                    creditCard = response.MaskedData.CreditCard,
+                                    ssn = response.MaskedData.SSN,
+                                    address = response.MaskedData.Address
+                                }
+                            };
+
+                            string jsonString = System.Text.Json.JsonSerializer.Serialize(jsonResponse, new System.Text.Json.JsonSerializerOptions 
+                            { 
+                                WriteIndented = true,
+                                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+                            });
+
+                            // Hiển thị response
+                            var txtResponse = tabControl.TabPages[0].Controls.Find("txtResponse", false)[0] as TextBox;
+                            if (txtResponse != null)
+                            {
+                                txtResponse.Text = jsonString;
+                            }
+
+                            lblStatus.Text = $"✓ Đã gửi và nhận response qua TCP! ID: {response.RecordId}";
+                            lblStatus.ForeColor = Color.Green;
+                            ClearInputs();
+                            LoadOriginalData();
                         }
-                    };
-
-                    string jsonString = System.Text.Json.JsonSerializer.Serialize(jsonResponse, new System.Text.Json.JsonSerializerOptions 
-                    { 
-                        WriteIndented = true,
-                        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-                    });
-
-                    // Hiển thị response
-                    var txtResponse = tabControl.TabPages[0].Controls.Find("txtResponse", false)[0] as TextBox;
-                    if (txtResponse != null)
-                    {
-                        txtResponse.Text = jsonString;
-                    }
-
-                    lblStatus.Text = $"✓ Đã gửi và nhận response thành công! ID: {response.RecordId}";
-                    lblStatus.ForeColor = Color.Green;
-                    ClearInputs();
-                    LoadOriginalData();
-                }
-                else
-                {
-                    MessageBox.Show(response.Message, "Lỗi");
-                    lblStatus.Text = "✗ Lỗi xử lý request!";
-                    lblStatus.ForeColor = Color.Red;
-                }
+                        else
+                        {
+                            MessageBox.Show(response.Message, "Lỗi");
+                            lblStatus.Text = "✗ Lỗi xử lý request!";
+                            lblStatus.ForeColor = Color.Red;
+                        }
+                    }));
+                });
             }
             catch (Exception ex)
             {
                 lblStatus.Text = "✗ Lỗi gửi dữ liệu!";
                 lblStatus.ForeColor = Color.Red;
                 MessageBox.Show("Lỗi: " + ex.Message, "Lỗi");
+            }
+        }
+
+        private async void BtnStartServer_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                // Hiển thị progress
+                progressServer.Visible = true;
+                var lblProgress = this.Controls.Find("lblProgress", false)[0] as Label;
+                if (lblProgress != null)
+                {
+                    lblProgress.Text = "Đang khởi động server...";
+                }
+                
+                btnStartServer.Enabled = false;
+                lblServerStatus.Text = "● Server: STARTING...";
+                lblServerStatus.ForeColor = Color.Orange;
+                
+                // Chờ một chút để UI update
+                await System.Threading.Tasks.Task.Delay(500);
+                
+                // Start server
+                await System.Threading.Tasks.Task.Run(() => serverService.Start(8888));
+                isServerRunning = true;
+                
+                // Ẩn progress
+                progressServer.Visible = false;
+                if (lblProgress != null)
+                {
+                    lblProgress.Text = "Server đã sẵn sàng!";
+                }
+                
+                btnStopServer.Enabled = true;
+                lblServerStatus.Text = "● Server: RUNNING (Port 8888)";
+                lblServerStatus.ForeColor = Color.Green;
+                
+                lblStatus.Text = "✓ Server đã khởi động thành công trên port 8888!";
+                lblStatus.ForeColor = Color.Green;
+                
+                // Xóa message sau 3 giây
+                await System.Threading.Tasks.Task.Delay(3000);
+                if (lblProgress != null)
+                {
+                    lblProgress.Text = "";
+                }
+            }
+            catch (Exception ex)
+            {
+                progressServer.Visible = false;
+                btnStartServer.Enabled = true;
+                lblServerStatus.Text = "● Server: ERROR";
+                lblServerStatus.ForeColor = Color.Red;
+                MessageBox.Show("Lỗi khởi động server: " + ex.Message, "Lỗi");
+            }
+        }
+
+        private void BtnStopServer_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                serverService.Stop();
+                isServerRunning = false;
+                
+                btnStartServer.Enabled = true;
+                btnStopServer.Enabled = false;
+                lblServerStatus.Text = "● Server: STOPPED";
+                lblServerStatus.ForeColor = Color.Red;
+                
+                lblStatus.Text = "Server đã dừng";
+                lblStatus.ForeColor = Color.Blue;
+                
+                var lblProgress = this.Controls.Find("lblProgress", false)[0] as Label;
+                if (lblProgress != null)
+                {
+                    lblProgress.Text = "";
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Lỗi dừng server: " + ex.Message, "Lỗi");
             }
         }
 
