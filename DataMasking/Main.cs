@@ -577,6 +577,7 @@ namespace DataMasking
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
             };
             StyleDataGridView(dgvOriginal);
+            dgvOriginal.CellDoubleClick += ShowRecordDetail_CellDoubleClick;
             tab.Controls.Add(dgvOriginal);
 
             btnRefresh = CreateModernButton("🔄  Làm mới", Color.FromArgb(55, 58, 80), ThemeTextPrimary, 110, 30);
@@ -634,6 +635,7 @@ namespace DataMasking
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
             };
             StyleDataGridView(dgvMasked);
+            dgvMasked.CellDoubleClick += ShowRecordDetail_CellDoubleClick;
             tab.Controls.Add(dgvMasked);
 
             btnShowMasked.Click += (s, e) => ShowMaskedData(dgvMasked);
@@ -683,7 +685,59 @@ namespace DataMasking
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
             };
             StyleDataGridView(dgvEncrypted);
+            dgvEncrypted.CellDoubleClick += ShowRecordDetail_CellDoubleClick;
             tab.Controls.Add(dgvEncrypted);
+        }
+
+        private void ShowRecordDetail_CellDoubleClick(object sender, DataGridViewCellEventArgs e)
+        {
+            if (e.RowIndex >= 0 && sender is DataGridView dgv)
+            {
+                var row = dgv.Rows[e.RowIndex];
+
+                // Build a nicely formatted string representing JSON-like structured data
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine("{");
+                for (int i = 0; i < dgv.Columns.Count; i++)
+                {
+                    string colName = dgv.Columns[i].HeaderText;
+                    string val = row.Cells[i].Value?.ToString() ?? "null";
+
+                    // Format appropriately: strings in quotes unless it looks like a number/boolean
+                    bool isNumeric = int.TryParse(val, out _) || double.TryParse(val, out _);
+                    string formattedVal = (val == "null" || isNumeric) ? val : $"\"{val.Replace("\"", "\\\"")}\"";
+
+                    sb.AppendLine($"  \"{colName}\": {formattedVal}" + (i < dgv.Columns.Count - 1 ? "," : ""));
+                }
+                sb.AppendLine("}");
+
+                // Show it in a popup
+                Form detailForm = new Form
+                {
+                    Text = "🔍 Chi tiết bản ghi",
+                    Size = new Size(600, 450),
+                    StartPosition = FormStartPosition.CenterParent,
+                    BackColor = ThemeBg,
+                    ShowIcon = false
+                };
+
+                TextBox txtDetail = new TextBox
+                {
+                    Dock = DockStyle.Fill,
+                    Multiline = true,
+                    ScrollBars = ScrollBars.Vertical,
+                    ReadOnly = true,
+                    BackColor = Color.FromArgb(20, 22, 35),
+                    ForeColor = ThemeCyan,
+                    Font = new Font("Cascadia Code", 10),
+                    Text = sb.ToString(),
+                    BorderStyle = BorderStyle.None,
+                    Margin = new Padding(10)
+                };
+
+                detailForm.Controls.Add(txtDetail);
+                detailForm.ShowDialog();
+            }
         }
 
         private void InitializeKeysTab(TabPage tab)
