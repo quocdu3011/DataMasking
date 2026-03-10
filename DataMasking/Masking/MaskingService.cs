@@ -239,28 +239,21 @@ namespace DataMasking.Masking
         {
             if (string.IsNullOrEmpty(address)) return address;
 
-            // Nếu địa chỉ ngắn (< 20 ký tự), che hết
-            if (address.Length < 20)
+            // Nếu địa chỉ ngắn (<= 15 ký tự), che hết 80% độ dài
+            if (address.Length <= 15)
             {
-                return new string('*', address.Length);
+                int maskLen = (int)(address.Length * 0.8);
+                string maskedShort = new string('*', maskLen);
+                string visibleShort = address.Substring(maskLen);
+                return maskedShort + visibleShort;
             }
 
-            // Nếu có dấu phẩy, chỉ hiện phần cuối
-            if (address.Contains(','))
-            {
-                string[] parts = address.Split(',');
-                // Lấy 2 phần cuối
-                if (parts.Length >= 2)
-                {
-                    string visible = parts[parts.Length - 2].Trim() + ", " + parts[parts.Length - 1].Trim();
-                    return "*****, " + visible;
-                }
-            }
-
-            // Nếu không có dấu phẩy, chỉ hiện 10 ký tự cuối
-            int visibleLength = Math.Min(10, address.Length / 3);
-            string maskedPart = new string('*', address.Length - visibleLength);
-            string visiblePart = address.Substring(address.Length - visibleLength);
+            // Nếu dài hơn 15 ký tự, chỉ hiện 15 ký tự cuối. Phần còn lại (phía trước) che bằng dấu *
+            int visibleLength = 15;
+            int maskedLength = address.Length - visibleLength;
+            string maskedPart = new string('*', maskedLength);
+            string visiblePart = address.Substring(maskedLength);
+            
             return maskedPart + visiblePart;
         }
 
