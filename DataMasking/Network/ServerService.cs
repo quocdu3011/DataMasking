@@ -14,6 +14,9 @@ namespace DataMasking.Network
     // Server - Nhận và giải mã dữ liệu qua TCP
     public class ServerService
     {
+        /// <summary>Admin có thể thay đổi kiểu masking trả về khi client đăng nhập.</summary>
+        public static MaskingType LoginMaskingType { get; set; } = MaskingType.CharacterMask;
+
         private RSAKeyPair serverKeyPair;
         private DatabaseManager dbManager;
         private MaskingService maskingService;
@@ -180,44 +183,85 @@ namespace DataMasking.Network
                 // Bước 3: Parse JSON
                 var data = JsonSerializer.Deserialize<SensitiveDataModel>(decryptedJson);
 
-                // Bước 4: Lưu vào database
-                TransmissionLogger.Log("SERVER: Đang lưu dữ liệu vào database...");
-                int id = dbManager.InsertSensitiveData(
-                    data.fullName, data.email, data.phone,
-                    data.creditCard, data.ssn, data.address
-                );
-                TransmissionLogger.Log($"SERVER: Đã lưu vào database với ID: {id}");
-
-                // Bước 5: Parse masking type từ client
-                MaskingType maskingType = MaskingType.CharacterMask;
-                if (!string.IsNullOrEmpty(data.maskingType))
+                // Bước 4: Xử lý dựa trên ActionType
+                if (packet.ActionType == "LOGIN")
                 {
-                    Enum.TryParse(data.maskingType, out maskingType);
-                }
-                TransmissionLogger.Log($"SERVER: Áp dụng masking type: {maskingType}");
-
-                // Bước 6: Tạo response với dữ liệu masked
-                ServerResponse response = new ServerResponse
-                {
-                    Success = true,
-                    RecordId = id,
-                    MaskedData = new MaskedDataModel
+                    TransmissionLogger.Log("SERVER: Đang xử lý yêu cầu đăng nhập...");
+                    string md5Password = Utils.MD5Hash.ComputeHash(data.password);
+                    System.Data.DataTable dt = dbManager.AuthenticateUser(data.username, md5Password);
+                    if (dt != null && dt.Rows.Count > 0)
                     {
-                        FullName = maskingService.ApplyMasking(data.fullName, "name", maskingType),
-                        Email = maskingService.ApplyMasking(data.email, "email", maskingType),
-                        Phone = maskingService.ApplyMasking(data.phone, "phone", maskingType),
-                        CreditCard = maskingService.ApplyMasking(data.creditCard, "creditcard", maskingType),
-                        SSN = maskingService.ApplyMasking(data.ssn, "ssn", maskingType),
-                        Address = maskingService.ApplyMasking(data.address, "address", maskingType)
-                    },
-                    Message = "Dữ liệu đã được lưu thành công"
-                };
+                        System.Data.DataRow userRow = dt.Rows[0];
+                        MaskingType loginMasking = ServerService.LoginMaskingType; // Do admin cấu hình
+                        
+                        ServerResponse loginResponse = new ServerResponse
+                        {
+                            Success = true,
+                            RecordId = Convert.ToInt32(userRow["id"]),
+                            MaskedData = new MaskedDataModel
+                            {
+                                FullName = maskingService.ApplyMasking(userRow["full_name"].ToString(), "name", loginMasking),
+                                Email = maskingService.ApplyMasking(userRow["email"].ToString(), "email", loginMasking),
+                                Phone = maskingService.ApplyMasking(userRow["phone"].ToString(), "phone", loginMasking),
+                                CreditCard = maskingService.ApplyMasking(userRow["credit_card"].ToString(), "creditcard", loginMasking),
+                                SSN = maskingService.ApplyMasking(userRow["ssn"].ToString(), "ssn", loginMasking),
+                                Address = maskingService.ApplyMasking(userRow["address"].ToString(), "address", loginMasking)
+                            },
+                            Message = "Đăng nhập thành công"
+                        };
+                        string loginMaskedJson = JsonSerializer.Serialize(loginResponse.MaskedData, new JsonSerializerOptions { WriteIndented = true });
+                        TransmissionLogger.LogServerResponse(loginMaskedJson);
+                        return loginResponse;
+                    }
+                    else
+                    {
+                        TransmissionLogger.Log("SERVER: Đăng nhập thất bại - sai tài khoản");
+                        return new ServerResponse { Success = false, Message = "Tài khoản hoặc mật khẩu không đúng." };
+                    }
+                }
+                else
+                {
+                    // ActionType == "SUBMIT"
+                    TransmissionLogger.Log("SERVER: Đang lưu dữ liệu vào database...");
+                    string md5Password = Utils.MD5Hash.ComputeHash(data.password ?? "");
+                    int id = dbManager.InsertSensitiveData(
+                        data.fullName, data.email, data.phone,
+                        data.creditCard, data.ssn, data.address,
+                        data.username, md5Password
+                    );
+                    TransmissionLogger.Log($"SERVER: Đã lưu vào database với ID: {id}");
 
-                // Log response
-                string maskedJson = JsonSerializer.Serialize(response.MaskedData, new JsonSerializerOptions { WriteIndented = true });
-                TransmissionLogger.LogServerResponse(maskedJson);
+                    // Bước 5: Parse masking type từ client
+                    MaskingType maskingType = MaskingType.CharacterMask;
+                    if (!string.IsNullOrEmpty(data.maskingType))
+                    {
+                        Enum.TryParse(data.maskingType, out maskingType);
+                    }
+                    TransmissionLogger.Log($"SERVER: Áp dụng masking type: {maskingType}");
 
-                return response;
+                    // Bước 6: Tạo response với dữ liệu masked
+                    ServerResponse response = new ServerResponse
+                    {
+                        Success = true,
+                        RecordId = id,
+                        MaskedData = new MaskedDataModel
+                        {
+                            FullName = maskingService.ApplyMasking(data.fullName, "name", maskingType),
+                            Email = maskingService.ApplyMasking(data.email, "email", maskingType),
+                            Phone = maskingService.ApplyMasking(data.phone, "phone", maskingType),
+                            CreditCard = maskingService.ApplyMasking(data.creditCard, "creditcard", maskingType),
+                            SSN = maskingService.ApplyMasking(data.ssn, "ssn", maskingType),
+                            Address = maskingService.ApplyMasking(data.address, "address", maskingType)
+                        },
+                        Message = "Dữ liệu đã được lưu thành công"
+                    };
+
+                    // Log response
+                    string maskedJson = JsonSerializer.Serialize(response.MaskedData, new JsonSerializerOptions { WriteIndented = true });
+                    TransmissionLogger.LogServerResponse(maskedJson);
+
+                    return response;
+                }
             }
             catch (Exception ex)
             {
@@ -234,6 +278,8 @@ namespace DataMasking.Network
     // Model dữ liệu nhạy cảm
     public class SensitiveDataModel
     {
+        public string username { get; set; }
+        public string password { get; set; }
         public string fullName { get; set; }
         public string email { get; set; }
         public string phone { get; set; }

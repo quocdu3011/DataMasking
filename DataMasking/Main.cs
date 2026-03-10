@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Data;
 using System.Drawing;
 using System.Linq;
@@ -7,6 +7,7 @@ using DataMasking.Database;
 using DataMasking.Masking;
 using DataMasking.Key;
 using DataMasking.Network;
+using DataMasking.Utils;
 
 namespace DataMasking
 {
@@ -32,6 +33,10 @@ namespace DataMasking
         private Label lblStatus, lblServerStatus;
         private TextBox txtConnectionString;
         private ProgressBar progressServer;
+        
+        // User authentication controls
+        private TextBox txtUsername, txtPassword;
+        private Button btnCreateUser;
 
         public Main()
         {
@@ -54,6 +59,19 @@ namespace DataMasking
 
             // Subscribe to CLIENT transmission logger only
             TransmissionLogger.OnClientLog += LogTransmission;
+            
+            // Hiển thị form đăng nhập cho client
+            ShowLoginForm();
+        }
+        
+        private void ShowLoginForm()
+        {
+            // Login form nay không nhận dbManager truyền trực tiếp mà sẽ nhận ClientService
+            // để trao đổi qua TCP với Server.
+            LoginForm loginForm = new LoginForm(clientService);
+            
+            // Dùng Show() thay vì ShowDialog() để form Login có thể hiển thị song song với Main admin.
+            loginForm.Show();
         }
 
         private void LogTransmission(string message)
@@ -264,6 +282,40 @@ namespace DataMasking
             };
             pnlControls.Controls.Add(lblServerStatus);
 
+            // ── Admin: Login Masking Config
+            Label lblLoginMask = new Label
+            {
+                Text = "🎭 Login Masking:",
+                Location = new Point(1160, 12),
+                AutoSize = true,
+                Font = new Font("Segoe UI Semibold", 9),
+                ForeColor = ThemeWarn
+            };
+            pnlControls.Controls.Add(lblLoginMask);
+
+            ComboBox cboLoginMasking = new ComboBox
+            {
+                Location = new Point(1278, 8),
+                Size = new Size(195, 28),
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Font = new Font("Segoe UI", 8.5f),
+                BackColor = ThemeInput,
+                ForeColor = ThemeWarn
+            };
+            cboLoginMasking.Items.AddRange(new object[]
+            {
+                "Che mặt nạ ký tự",
+                "Xáo trộn dữ liệu",
+                "Thay thế bằng dữ liệu giả",
+                "Thêm nhiễu vào ký tự số"
+            });
+            cboLoginMasking.SelectedIndex = 0;
+            cboLoginMasking.SelectedIndexChanged += (s, e) =>
+            {
+                ServerService.LoginMaskingType = (Masking.MaskingType)cboLoginMasking.SelectedIndex;
+            };
+            pnlControls.Controls.Add(cboLoginMasking);
+
             // Progress Bar (hidden by default)
             progressServer = new ProgressBar
             {
@@ -425,6 +477,65 @@ namespace DataMasking
             int y = 40;
             int labelX = 20, textX = 160, width = 400;
 
+            // User authentication section (Merged with Data section)
+            Label lblDataSection = new Label
+            {
+                Text = "📝 Nhập thông tin tài khoản và dữ liệu nhạy cảm:",
+                Location = new Point(labelX, y),
+                AutoSize = true,
+                Font = new Font("Segoe UI Semibold", 9),
+                ForeColor = ThemeAccentHover
+            };
+            tab.Controls.Add(lblDataSection);
+            y += 25;
+
+            // Username
+            Label lblUsername = new Label
+            {
+                Text = "🔑  Username:",
+                Location = new Point(labelX, y + 3),
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9),
+                ForeColor = ThemeTextSecondary
+            };
+            tab.Controls.Add(lblUsername);
+
+            txtUsername = new TextBox
+            {
+                Location = new Point(textX, y),
+                Size = new Size(width, 28),
+                BackColor = ThemeInput,
+                ForeColor = ThemeTextPrimary,
+                BorderStyle = BorderStyle.FixedSingle,
+                Font = new Font("Segoe UI", 9.5f)
+            };
+            tab.Controls.Add(txtUsername);
+            y += 35;
+
+            // Password
+            Label lblPassword = new Label
+            {
+                Text = "🔒  Password:",
+                Location = new Point(labelX, y + 3),
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9),
+                ForeColor = ThemeTextSecondary
+            };
+            tab.Controls.Add(lblPassword);
+
+            txtPassword = new TextBox
+            {
+                Location = new Point(textX, y),
+                Size = new Size(width, 28),
+                PasswordChar = '●',
+                BackColor = ThemeInput,
+                ForeColor = ThemeTextPrimary,
+                BorderStyle = BorderStyle.FixedSingle,
+                Font = new Font("Segoe UI", 9.5f)
+            };
+            tab.Controls.Add(txtPassword);
+            y += 35;
+
             // Create themed input fields
             TextBox[] fields = new TextBox[6];
             string[] labels = { "👤  Họ và tên:", "📧  Email:", "📱  Số điện thoại:", "💳  Thẻ tín dụng:", "🆔  SSN:", "🏠  Địa chỉ:" };
@@ -491,7 +602,7 @@ namespace DataMasking
                 "Thay thế bằng dữ liệu giả",
                 "Thêm nhiễu vào ký tự số"
             });
-            cboMaskingType.SelectedIndex = 0;
+            cboMaskingType.SelectedIndex = 0; // Default: Che mặt nạ ký tự (masking type 1)
             tab.Controls.Add(cboMaskingType);
 
             y += 40;
@@ -505,6 +616,12 @@ namespace DataMasking
             btnClear.Location = new Point(textX + 190, y);
             btnClear.Click += (s, e) => ClearInputs();
             tab.Controls.Add(btnClear);
+
+            Button btnMockData = CreateModernButton("🎲  Mock Data", Color.FromArgb(80, 60, 120), Color.FromArgb(200, 180, 255), 120, 38);
+            btnMockData.Location = new Point(textX + 300, y);
+            btnMockData.Font = new Font("Segoe UI Semibold", 9);
+            btnMockData.Click += (s, e) => FillMockData();
+            tab.Controls.Add(btnMockData);
 
             // Response area
             y += 50;
@@ -900,7 +1017,8 @@ namespace DataMasking
 
                 int id = dbManager.InsertSensitiveData(
                     txtName.Text, txtEmail.Text, txtPhone.Text,
-                    txtCard.Text, txtSSN.Text, txtAddress.Text
+                    txtCard.Text, txtSSN.Text, txtAddress.Text,
+                    txtUsername.Text, Utils.MD5Hash.ComputeHash(txtPassword.Text)
                 );
 
                 lblStatus.Text = $"Đã thêm bản ghi ID: {id}";
@@ -921,9 +1039,16 @@ namespace DataMasking
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(txtName.Text))
+                if (string.IsNullOrWhiteSpace(txtName.Text) || string.IsNullOrWhiteSpace(txtUsername.Text) || string.IsNullOrWhiteSpace(txtPassword.Text))
                 {
-                    MessageBox.Show("Vui lòng nhập họ tên!", "Thông báo");
+                    MessageBox.Show("Vui lòng nhập họ tên, username và password!", "Thông báo");
+                    return;
+                }
+
+                if (txtPassword.Text.Length <= 6)
+                {
+                    MessageBox.Show("Mật khẩu phải lớn hơn 6 ký tự!", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    txtPassword.Focus();
                     return;
                 }
 
@@ -943,7 +1068,7 @@ namespace DataMasking
                 Task.Run(async () =>
                 {
                     ServerResponse response = await clientService.SendSecureRequestAsync(
-                        txtName.Text, txtEmail.Text, txtPhone.Text,
+                        txtUsername.Text, txtPassword.Text, txtName.Text, txtEmail.Text, txtPhone.Text,
                         txtCard.Text, txtSSN.Text, txtAddress.Text,
                         selectedMaskingType
                     );
@@ -1343,12 +1468,87 @@ namespace DataMasking
 
         private void ClearInputs()
         {
+            txtUsername.Clear();
+            txtPassword.Clear();
             txtName.Clear();
             txtEmail.Clear();
             txtPhone.Clear();
             txtCard.Clear();
             txtSSN.Clear();
             txtAddress.Clear();
+        }
+
+        private void FillMockData()
+        {
+            var rand = new Random();
+            
+            string[] firstNames = { "Nguyễn", "Trần", "Lê", "Phạm", "Hoàng", "Huỳnh", "Phan", "Vũ", "Võ", "Đặng", "Bùi", "Đỗ", "Hồ", "Ngô", "Dương", "Lý" };
+            string[] middleNames = { "Văn", "Hữu", "Thanh", "Công", "Minh", "Thị", "Ngọc", "Thu", "Mai", "Hải", "Tuấn", "Hoàng", "Hồng", "Xuân" };
+            string[] lastNames = { "Nam", "Anh", "Hải", "Sơn", "Hùng", "Bình", "Thảo", "Lan", "Hương", "Hà", "Trang", "Linh", "Quỳnh", "Khoa", "Đạt", "Long" };
+            
+            string first = firstNames[rand.Next(firstNames.Length)];
+            string middle = middleNames[rand.Next(middleNames.Length)];
+            string last = lastNames[rand.Next(lastNames.Length)];
+            
+            string fullName = $"{first} {middle} {last}";
+            
+            // Remove diacritics for username and email
+            string normalizedName = RemoveVietnameseTone(first).ToLower() + RemoveVietnameseTone(middle).ToLower()[0] + RemoveVietnameseTone(last).ToLower();
+            
+            string[] domains = { "gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "fpt.edu.vn", "vnu.edu.vn" };
+            string email = $"{normalizedName}{rand.Next(10, 999)}@{domains[rand.Next(domains.Length)]}";
+            
+            string[] prefixes = { "090", "091", "092", "093", "094", "096", "097", "098", "099", "086", "088", "089", "032", "033", "034", "035", "036", "037", "038", "039" };
+            string phone = prefixes[rand.Next(prefixes.Length)] + rand.Next(1000000, 9999999).ToString();
+            
+            string card = $"{rand.Next(4000, 5999)}-{rand.Next(1000, 9999)}-{rand.Next(1000, 9999)}-{rand.Next(1000, 9999)}";
+            
+            string ssn = $"0{rand.Next(1, 99):D2}2{rand.Next(0, 9)}0{rand.Next(100000, 999999)}"; // Typical Vietnam CCCD format start
+            
+            string[] streets = { "Khúc Thừa Dụ", "Trần Duy Hưng", "Nguyễn Trãi", "Lê Văn Lương", "Láng Hạ", "Kim Mã", "Cầu Giấy", "Hồ Tùng Mậu", "Tôn Đức Thắng", "Phố Huế" };
+            string[] cities = { "Hà Nội", "Hồ Chí Minh", "Đà Nẵng", "Hải Phòng", "Cần Thơ", "Nha Trang", "Vũng Tàu", "Huế" };
+            string address = $"Số {rand.Next(1, 999)} {streets[rand.Next(streets.Length)]}, {cities[rand.Next(cities.Length)]}";
+
+            txtUsername.Text = normalizedName;
+            // password is left intact or untouched per requirement "trừ password"
+            txtName.Text = fullName;
+            txtEmail.Text = email;
+            txtPhone.Text = phone;
+            txtCard.Text = card;
+            txtSSN.Text = ssn;
+            txtAddress.Text = address;
+
+            // Chuyển Focus về trường password sau khi mock để user nhập pass
+            txtPassword.Focus();
+        }
+
+        public static string RemoveVietnameseTone(string text)
+        {
+            string[] vietnameseSigns = new string[]
+            {
+                "aAeEoOuUiIdDyY",
+                "áàạảãâấầậẩẫăắằặẳẵ",
+                "ÁÀẠẢÃÂẤẦẬẨẪĂẮẰẶẲẴ",
+                "éèẹẻẽêếềệểễ",
+                "ÉÈẸẺẼÊẾỀỆỂỄ",
+                "óòọỏõôốồộổỗơớờợởỡ",
+                "ÓÒỌỎÕÔỐỒỘỔỖƠỚỜỢỞỠ",
+                "úùụủũưứừựửữ",
+                "ÚÙỤỦŨƯỨỪỰỬỮ",
+                "íìịỉĩ",
+                "ÍÌỊỈĨ",
+                "đ",
+                "Đ",
+                "ýỳỵỷỹ",
+                "ÝỲỴỶỸ"
+            };
+            
+            for (int i = 1; i < vietnameseSigns.Length; i++)
+            {
+                for (int j = 0; j < vietnameseSigns[i].Length; j++)
+                    text = text.Replace(vietnameseSigns[i][j], vietnameseSigns[0][i - 1]);
+            }
+            return text;
         }
     }
 }

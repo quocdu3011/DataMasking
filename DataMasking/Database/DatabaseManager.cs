@@ -47,6 +47,8 @@ namespace DataMasking.Database
                         credit_card VARCHAR(19),
                         ssn VARCHAR(11),
                         address TEXT,
+                        username VARCHAR(50) UNIQUE NOT NULL,
+                        password_hash VARCHAR(32) NOT NULL,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )";
 
@@ -71,6 +73,7 @@ namespace DataMasking.Database
                     cmd.ExecuteNonQuery();
                 }
 
+                // Bảng users không còn cần thiết, đã migrate sang sensitive_data
                 connection.Close();
             }
             catch (Exception ex)
@@ -80,7 +83,8 @@ namespace DataMasking.Database
         }
 
         public int InsertSensitiveData(string fullName, string email, string phone, 
-                                       string creditCard, string ssn, string address)
+                                       string creditCard, string ssn, string address,
+                                       string username, string passwordHash)
         {
             try
             {
@@ -88,8 +92,8 @@ namespace DataMasking.Database
                 connection.Open();
 
                 string query = @"INSERT INTO sensitive_data 
-                    (full_name, email, phone, credit_card, ssn, address) 
-                    VALUES (@fullName, @email, @phone, @creditCard, @ssn, @address);
+                    (full_name, email, phone, credit_card, ssn, address, username, password_hash) 
+                    VALUES (@fullName, @email, @phone, @creditCard, @ssn, @address, @username, @passwordHash);
                     SELECT LAST_INSERT_ID();";
 
                 using (MySqlCommand cmd = new MySqlCommand(query, connection))
@@ -100,6 +104,8 @@ namespace DataMasking.Database
                     cmd.Parameters.AddWithValue("@creditCard", creditCard);
                     cmd.Parameters.AddWithValue("@ssn", ssn);
                     cmd.Parameters.AddWithValue("@address", address);
+                    cmd.Parameters.AddWithValue("@username", username);
+                    cmd.Parameters.AddWithValue("@passwordHash", passwordHash);
 
                     int id = Convert.ToInt32(cmd.ExecuteScalar());
                     connection.Close();
@@ -214,17 +220,73 @@ namespace DataMasking.Database
             try
             {
                 InsertSensitiveData("Nguyễn Văn An", "nguyenvanan@email.com", "0901234567", 
-                    "4532-1234-5678-9010", "123-45-6789", "123 Đường Lê Lợi, Q1, TP.HCM");
+                    "4532-1234-5678-9010", "123-45-6789", "123 Đường Lê Lợi, Q1, TP.HCM",
+                    "user1", Utils.MD5Hash.ComputeHash("123456"));
                 
                 InsertSensitiveData("Trần Thị Bình", "tranthibinh@email.com", "0912345678", 
-                    "5425-2345-6789-0123", "234-56-7890", "456 Đường Nguyễn Huệ, Q1, TP.HCM");
+                    "5425-2345-6789-0123", "234-56-7890", "456 Đường Nguyễn Huệ, Q1, TP.HCM",
+                    "user2", Utils.MD5Hash.ComputeHash("123456"));
                 
                 InsertSensitiveData("Lê Văn Cường", "levancuong@email.com", "0923456789", 
-                    "4916-3456-7890-1234", "345-67-8901", "789 Đường Hai Bà Trưng, Q3, TP.HCM");
+                    "4916-3456-7890-1234", "345-67-8901", "789 Đường Hai Bà Trưng, Q3, TP.HCM",
+                    "user3", Utils.MD5Hash.ComputeHash("123456"));
             }
             catch (Exception ex)
             {
                 throw new Exception("Lỗi thêm dữ liệu mẫu: " + ex.Message);
+            }
+        }
+
+        public bool CreateUser(string username, string passwordHash)
+        {
+            try
+            {
+                connection = new MySqlConnection(connectionString);
+                connection.Open();
+
+                // Fake sensitive data info for user-only creation
+                string query = @"INSERT INTO sensitive_data (username, password_hash, full_name, email, phone, credit_card, ssn, address) 
+                    VALUES (@username, @passwordHash, '', '', '', '', '', '')";
+
+                using (MySqlCommand cmd = new MySqlCommand(query, connection))
+                {
+                    cmd.Parameters.AddWithValue("@username", username);
+                    cmd.Parameters.AddWithValue("@passwordHash", passwordHash);
+                    cmd.ExecuteNonQuery();
+                }
+
+                connection.Close();
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        public DataTable AuthenticateUser(string username, string passwordHash)
+        {
+            try
+            {
+                connection = new MySqlConnection(connectionString);
+                connection.Open();
+
+                string query = @"SELECT * FROM sensitive_data 
+                    WHERE username = @username AND password_hash = @passwordHash";
+
+                MySqlDataAdapter adapter = new MySqlDataAdapter(query, connection);
+                adapter.SelectCommand.Parameters.AddWithValue("@username", username);
+                adapter.SelectCommand.Parameters.AddWithValue("@passwordHash", passwordHash);
+                
+                DataTable dt = new DataTable();
+                adapter.Fill(dt);
+                connection.Close();
+                
+                return dt;
+            }
+            catch (Exception)
+            {
+                return null;
             }
         }
     }
