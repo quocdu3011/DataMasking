@@ -168,8 +168,8 @@ namespace DataMasking
         private void InitializeCustomComponents()
         {
             this.Text = "🔒 Data Masking System — Client-Server TCP Network";
-            this.Size = new Size(1500, 870);
-            this.StartPosition = FormStartPosition.CenterScreen;
+            this.Size = new Size(1550, 870);
+            this.StartPosition = FormStartPosition.Manual;
             this.BackColor = ThemeBg;
             this.ForeColor = ThemeTextPrimary;
             this.Font = new Font("Segoe UI", 9);
@@ -229,7 +229,7 @@ namespace DataMasking
 
             txtConnectionString = new TextBox
             {
-                Location = new Point(125, 9),
+                Location = new Point(135, 9),
                 Size = new Size(400, 28),
                 Text = "Server=36.50.54.109;Port=3306;Database=datamasking_db;Uid=anonymous;Pwd=1;",
                 BackColor = ThemeInput,
@@ -295,7 +295,7 @@ namespace DataMasking
 
             ComboBox cboLoginMasking = new ComboBox
             {
-                Location = new Point(1278, 8),
+                Location = new Point(1300, 8),
                 Size = new Size(195, 28),
                 DropDownStyle = ComboBoxStyle.DropDownList,
                 Font = new Font("Segoe UI", 8.5f),
@@ -475,7 +475,7 @@ namespace DataMasking
             tab.Controls.Add(lblInfo);
 
             int y = 40;
-            int labelX = 20, textX = 160, width = 400;
+            int labelX = 20, textX = 200, width = 400;
 
             // User authentication section (Merged with Data section)
             Label lblDataSection = new Label
@@ -1196,7 +1196,9 @@ namespace DataMasking
             {
                 Text = "🖥️ SERVER LOG - Port 8888",
                 Size = new Size(750, 550),
-                StartPosition = FormStartPosition.CenterScreen,
+                // Khởi động sẽ ở góc dưới bên phải 
+                StartPosition = FormStartPosition.Manual,
+                Location = new Point(Screen.PrimaryScreen.Bounds.Width - 760, Screen.PrimaryScreen.Bounds.Height - 560),
                 MinimumSize = new Size(500, 350),
                 BackColor = Color.FromArgb(30, 30, 30)
             };

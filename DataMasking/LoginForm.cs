@@ -94,7 +94,7 @@ namespace DataMasking
                 BackColor = Color.Transparent,
                 ForeColor = TextPrimary
             };
-            lblIcon.Location = new Point((this.Width - lblIcon.PreferredWidth) / 2, 48);
+            lblIcon.Location = new Point((this.Width - lblIcon.PreferredWidth) / 2, 30);
             pnlBg.Controls.Add(lblIcon);
 
             Label lblAppName = new Label
@@ -116,13 +116,13 @@ namespace DataMasking
                 BackColor = Color.Transparent,
                 ForeColor = TextSecondary
             };
-            lblSubtitle.Location = new Point((this.Width - lblSubtitle.PreferredWidth) / 2, 142);
+            lblSubtitle.Location = new Point((this.Width - lblSubtitle.PreferredWidth) / 2, 155);
             pnlBg.Controls.Add(lblSubtitle);
 
             // ── Card panel
             pnlCard = new Panel
             {
-                Size = new Size(360, 280),
+                Size = new Size(360, 300),
                 Location = new Point((this.Width - 360) / 2, 190),
                 BackColor = CardBg
             };
