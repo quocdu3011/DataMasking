@@ -161,6 +161,110 @@ namespace DataMasking.Network
             string[] names = { "Che mặt nạ ký tự", "Xáo trộn dữ liệu", "Thay thế dữ liệu giả", "Thêm nhiễu số" };
             return type >= 0 && type < names.Length ? names[type] : "Unknown";
         }
+
+        public async Task<Models.ActvnScheduleResponse> SendActvnScheduleRequestAsync(string username, string password)
+        {
+            try
+            {
+                TransmissionLogger.LogClient("=======================================================");
+                TransmissionLogger.LogClient($"[CLIENT] ACTVN Schedule Request - Username: {username}");
+
+                using (TcpClient client = new TcpClient())
+                {
+                    TransmissionLogger.LogClient($"[CLIENT] Connecting to Server {serverHost}:{serverPort}...");
+                    await client.ConnectAsync(serverHost, serverPort);
+                    TransmissionLogger.LogClient("[CLIENT] Connected successfully!");
+
+                    NetworkStream stream = client.GetStream();
+
+                    // 1. Create random AES key
+                    AESKey aesKey = new AESKey();
+                    TransmissionLogger.LogClient($"[CLIENT] Generated AES Key");
+
+                    // 2. Encrypt AES key with RSA
+                    RSA rsa = new RSA(serverPublicKey.N, serverPublicKey.E);
+                    byte[] encryptedAESKey = rsa.Encrypt(aesKey.Key);
+                    TransmissionLogger.LogClient($"[CLIENT] Encrypted AES Key with RSA ({encryptedAESKey.Length} bytes)");
+
+                    // 3. Send encrypted AES key
+                    byte[] keyLengthBytes = BitConverter.GetBytes(encryptedAESKey.Length);
+                    await stream.WriteAsync(keyLengthBytes, 0, 4);
+                    await stream.WriteAsync(encryptedAESKey, 0, encryptedAESKey.Length);
+                    TransmissionLogger.LogClient($"[CLIENT] Sent Encrypted AES Key");
+
+                    // 4. Generate IV and send
+                    byte[] iv = aesKey.IV;
+                    await stream.WriteAsync(iv, 0, iv.Length);
+                    TransmissionLogger.LogClient($"[CLIENT] Sent IV");
+
+                    // 5. Create request
+                    var request = new Models.ActvnScheduleRequest
+                    {
+                        Action = "actvn_schedule",
+                        Username = username,
+                        Password = password
+                    };
+
+                    string requestJson = System.Text.Json.JsonSerializer.Serialize(request, new System.Text.Json.JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+                    });
+                    TransmissionLogger.LogClient($"[CLIENT] Request JSON: {requestJson}");
+
+                    // 6. Encrypt request
+                    AES aes = new AES(aesKey.Key);
+                    byte[] requestBytes = Encoding.UTF8.GetBytes(requestJson);
+                    byte[] encryptedRequest = aes.EncryptCBC(requestBytes, iv);
+                    TransmissionLogger.LogClient($"[CLIENT] Encrypted request ({encryptedRequest.Length} bytes)");
+
+                    // 7. Send encrypted request
+                    byte[] requestLengthBytes = BitConverter.GetBytes(encryptedRequest.Length);
+                    await stream.WriteAsync(requestLengthBytes, 0, 4);
+                    await stream.WriteAsync(encryptedRequest, 0, encryptedRequest.Length);
+                    TransmissionLogger.LogClient($"[CLIENT] Sent encrypted request");
+
+                    // 8. Receive response
+                    byte[] responseLengthBytes = new byte[4];
+                    await stream.ReadAsync(responseLengthBytes, 0, 4);
+                    int responseLength = BitConverter.ToInt32(responseLengthBytes, 0);
+
+                    byte[] encryptedResponse = new byte[responseLength];
+                    int totalRead = 0;
+                    while (totalRead < responseLength)
+                    {
+                        int read = await stream.ReadAsync(encryptedResponse, totalRead, responseLength - totalRead);
+                        totalRead += read;
+                    }
+                    TransmissionLogger.LogClient($"[CLIENT] Received encrypted response ({responseLength} bytes)");
+
+                    // 9. Decrypt response
+                    byte[] decryptedResponse = aes.DecryptCBC(encryptedResponse, iv);
+                    string responseJson = Encoding.UTF8.GetString(decryptedResponse);
+                    TransmissionLogger.LogClient($"[CLIENT] Decrypted response");
+
+                    var response = System.Text.Json.JsonSerializer.Deserialize<Models.ActvnScheduleResponse>(responseJson, new System.Text.Json.JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    });
+
+                    TransmissionLogger.LogClient($"[CLIENT] Response: Success={response.Success}, Events={response.Events?.Count ?? 0}");
+                    TransmissionLogger.LogClient("=======================================================");
+
+                    return response;
+                }
+            }
+            catch (Exception ex)
+            {
+                TransmissionLogger.LogClient($"[CLIENT] Error: {ex.Message}");
+                TransmissionLogger.LogClient("=======================================================");
+                return new Models.ActvnScheduleResponse
+                {
+                    Success = false,
+                    Message = $"Lỗi kết nối: {ex.Message}",
+                    Events = new System.Collections.Generic.List<Models.ActvnCalendarEvent>()
+                };
+            }
+        }
     }
 
     public class StudentScoreResponse

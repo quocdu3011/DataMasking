@@ -116,11 +116,34 @@ namespace DataMasking.Network
                 TransmissionLogger.LogServer($"[SERVER] Đã giải mã request");
                 TransmissionLogger.LogServer($"[SERVER] Request JSON: {requestJson}");
 
-                // 6. Parse request với camelCase naming policy
+                // 6. Parse request - check action type first
                 var jsonOptions = new System.Text.Json.JsonSerializerOptions
                 {
                     PropertyNameCaseInsensitive = true
                 };
+
+                // Determine request type by checking "action" field
+                using (var jsonDoc = System.Text.Json.JsonDocument.Parse(requestJson))
+                {
+                    string action = jsonDoc.RootElement.TryGetProperty("action", out var actionProp) 
+                        ? actionProp.GetString() ?? "score_lookup" 
+                        : "score_lookup";
+
+                    TransmissionLogger.LogServer($"[SERVER] Request action: {action}");
+
+                    if (action == "actvn_login")
+                    {
+                        await HandleActvnLogin(requestJson, stream, aes, iv);
+                        return;
+                    }
+                    else if (action == "actvn_schedule")
+                    {
+                        await HandleActvnSchedule(requestJson, stream, aes, iv);
+                        return;
+                    }
+                }
+
+                // Default: Score lookup request
                 var request = System.Text.Json.JsonSerializer.Deserialize<StudentScoreRequest>(requestJson, jsonOptions);
                 
                 if (request == null)
@@ -432,6 +455,153 @@ namespace DataMasking.Network
             cancellationTokenSource?.Cancel();
             listener?.Stop();
             TransmissionLogger.LogServer("[SERVER] Đã dừng");
+        }
+
+        private async Task HandleActvnLogin(string requestJson, System.Net.Sockets.NetworkStream stream, AES aes, byte[] iv)
+        {
+            try
+            {
+                var jsonOptions = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var request = System.Text.Json.JsonSerializer.Deserialize<ActvnLoginRequest>(requestJson, jsonOptions);
+
+                TransmissionLogger.LogServer($"[SERVER] ACTVN Login request - Username: {request.Username}");
+
+                var crawler = new Services.ActvnCrawlerService();
+                var loginResult = await crawler.LoginAsync(request.Username, request.Password);
+
+                ActvnLoginResponse response;
+                if (loginResult.Success)
+                {
+                    var studentInfo = await crawler.FetchStudentProfileAsync();
+                    response = new ActvnLoginResponse
+                    {
+                        Success = true,
+                        Message = "Đăng nhập thành công",
+                        StudentInfo = new ActvnStudentInfo
+                        {
+                            StudentCode = studentInfo.StudentCode,
+                            StudentName = studentInfo.StudentName,
+                            Gender = studentInfo.Gender,
+                            Birthday = studentInfo.Birthday
+                        }
+                    };
+                    TransmissionLogger.LogServer($"[SERVER] ACTVN Login successful - Student: {studentInfo.StudentName} ({studentInfo.StudentCode})");
+                }
+                else
+                {
+                    response = new ActvnLoginResponse
+                    {
+                        Success = false,
+                        Message = loginResult.Message
+                    };
+                    TransmissionLogger.LogServer($"[SERVER] ACTVN Login failed: {loginResult.Message}");
+                }
+
+                await SendEncryptedResponse(response, stream, aes, iv);
+            }
+            catch (Exception ex)
+            {
+                TransmissionLogger.LogServer($"[SERVER] Error in HandleActvnLogin: {ex.Message}");
+                var errorResponse = new ActvnLoginResponse { Success = false, Message = $"Lỗi: {ex.Message}" };
+                await SendEncryptedResponse(errorResponse, stream, aes, iv);
+            }
+        }
+
+        private async Task HandleActvnSchedule(string requestJson, System.Net.Sockets.NetworkStream stream, AES aes, byte[] iv)
+        {
+            try
+            {
+                var jsonOptions = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var request = System.Text.Json.JsonSerializer.Deserialize<ActvnScheduleRequest>(requestJson, jsonOptions);
+
+                TransmissionLogger.LogServer($"[SERVER] ACTVN Schedule request - Username: {request.Username}");
+
+                var crawler = new Services.ActvnCrawlerService();
+                var loginResult = await crawler.LoginAsync(request.Username, request.Password);
+
+                ActvnScheduleResponse response;
+                if (loginResult.Success)
+                {
+                    TransmissionLogger.LogServer($"[SERVER] ACTVN Login successful, fetching schedule...");
+                    var scheduleData = await crawler.FetchStudentScheduleAsync();
+                    
+                    TransmissionLogger.LogServer($"[SERVER] Schedule fetched - Student: {scheduleData.StudentInfo.StudentName}");
+                    TransmissionLogger.LogServer($"[SERVER] Events count: {scheduleData.Events.Count}");
+                    
+                    if (scheduleData.Events.Count > 0)
+                    {
+                        TransmissionLogger.LogServer($"[SERVER] Sample event: {scheduleData.Events[0].Title} on {scheduleData.Events[0].Date}");
+                    }
+                    
+                    response = new ActvnScheduleResponse
+                    {
+                        Success = true,
+                        Message = "Lấy lịch học thành công",
+                        StudentInfo = new ActvnStudentInfo
+                        {
+                            StudentCode = scheduleData.StudentInfo.StudentCode,
+                            StudentName = scheduleData.StudentInfo.StudentName,
+                            Gender = scheduleData.StudentInfo.Gender,
+                            Birthday = scheduleData.StudentInfo.Birthday
+                        },
+                        Events = scheduleData.Events.Select(e => new ActvnCalendarEvent
+                        {
+                            Title = e.Title,
+                            CourseCode = e.CourseCode,
+                            Teacher = e.Teacher,
+                            Location = e.Location,
+                            Date = e.Date,
+                            Lessons = e.Lessons,
+                            StartTime = e.StartTime,
+                            EndTime = e.EndTime,
+                            DayOfWeek = e.DayOfWeek
+                        }).ToList()
+                    };
+                    TransmissionLogger.LogServer($"[SERVER] ACTVN Schedule successful - {response.Events.Count} events found");
+                }
+                else
+                {
+                    response = new ActvnScheduleResponse
+                    {
+                        Success = false,
+                        Message = loginResult.Message,
+                        Events = new List<ActvnCalendarEvent>()
+                    };
+                    TransmissionLogger.LogServer($"[SERVER] ACTVN Schedule failed: {loginResult.Message}");
+                }
+
+                await SendEncryptedResponse(response, stream, aes, iv);
+            }
+            catch (Exception ex)
+            {
+                TransmissionLogger.LogServer($"[SERVER] Error in HandleActvnSchedule: {ex.Message}");
+                TransmissionLogger.LogServer($"[SERVER] Stack trace: {ex.StackTrace}");
+                var errorResponse = new ActvnScheduleResponse 
+                { 
+                    Success = false, 
+                    Message = $"Lỗi: {ex.Message}",
+                    Events = new List<ActvnCalendarEvent>()
+                };
+                await SendEncryptedResponse(errorResponse, stream, aes, iv);
+            }
+        }
+
+        private async Task SendEncryptedResponse<T>(T response, System.Net.Sockets.NetworkStream stream, AES aes, byte[] iv)
+        {
+            string responseJson = System.Text.Json.JsonSerializer.Serialize(response, new System.Text.Json.JsonSerializerOptions
+            {
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            });
+
+            byte[] responseBytes = Encoding.UTF8.GetBytes(responseJson);
+            byte[] encryptedResponse = aes.EncryptCBC(responseBytes, iv);
+            
+            TransmissionLogger.LogServer($"[SERVER] Sending encrypted response ({encryptedResponse.Length} bytes)");
+
+            byte[] responseLengthBytes = BitConverter.GetBytes(encryptedResponse.Length);
+            await stream.WriteAsync(responseLengthBytes, 0, 4);
+            await stream.WriteAsync(encryptedResponse, 0, encryptedResponse.Length);
         }
     }
 

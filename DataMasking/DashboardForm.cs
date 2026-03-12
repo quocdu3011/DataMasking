@@ -24,7 +24,7 @@ namespace DataMasking
 
         private const int SidebarW = 220;
         private const int TopBarH  = 54;
-        private const int Padding  = 24;
+        private const int FormPadding  = 24;
 
         public event Action OnLogout;
 
@@ -54,7 +54,7 @@ namespace DataMasking
 
         // ─────────────────────────────── Content width helpers
         // Must be called after the form is sized to get accurate values.
-        private int ContentW => this.ClientSize.Width - SidebarW - Padding * 2 - SystemInformation.VerticalScrollBarWidth;
+        private int ContentW => this.ClientSize.Width - SidebarW - FormPadding * 2 - SystemInformation.VerticalScrollBarWidth;
 
         // ══════════════════════════════════════════ SIDEBAR
         private void BuildSidebar()
@@ -228,7 +228,7 @@ namespace DataMasking
                 Dock       = DockStyle.Fill,
                 AutoScroll = true,
                 BackColor  = BgDark,
-                Padding    = new Padding(Padding, 20, Padding, 20)
+                Padding    = new System.Windows.Forms.Padding(FormPadding, 20, FormPadding, 20)
             };
             this.Controls.Add(content);
             content.BringToFront();
@@ -252,8 +252,8 @@ namespace DataMasking
             content.Controls.Clear();
 
             // Use actual width; fallback to form width estimate
-            int cw = content.ClientSize.Width - Padding * 2;
-            if (cw <= 100) cw = this.Width - SidebarW - Padding * 2 - 20;
+            int cw = content.ClientSize.Width - FormPadding * 2;
+            if (cw <= 100) cw = this.Width - SidebarW - FormPadding * 2 - 20;
 
             var masked = loginResponse?.MaskedData;
 
@@ -397,7 +397,7 @@ namespace DataMasking
         {
             if (bannerPanel == null) return;
 
-            int cw = content.ClientSize.Width - Padding * 2;
+            int cw = content.ClientSize.Width - FormPadding * 2;
             if (cw <= 100) return;
 
             int cardGap = 12;

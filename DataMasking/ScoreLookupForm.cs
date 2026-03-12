@@ -31,6 +31,7 @@ namespace DataMasking
         private ComboBox cboMaskingType;
         private Button btnStartServer;
         private Button btnStopServer;
+        private Button btnLogout; // Logout button reference
         private Label lblServerStatus;
         private TextBox txtClientLog;
         private TextBox txtServerLog;
@@ -299,7 +300,7 @@ namespace DataMasking
             Panel pnlSummary = new Panel
             {
                 Location = new Point(20, 685),
-                Size = new Size(900, 75),
+                Size = new Size(900, 110),
                 BackColor = ThemePanel
             };
             this.Controls.Add(pnlSummary);
@@ -352,6 +353,24 @@ namespace DataMasking
             btnCPACalculator.Location = new Point(col2X + 260, 10);
             btnCPACalculator.Click += BtnCPACalculator_Click;
             pnlSummary.Controls.Add(btnCPACalculator);
+
+            // New buttons for ACTVN Portal
+            Button btnViewTimetable = CreateModernButton("📅 Xem lịch học", Color.FromArgb(80, 60, 120), Color.FromArgb(200, 180, 255), 130, 32);
+            btnViewTimetable.Location = new Point(col2X, 45);
+            btnViewTimetable.Click += BtnViewTimetable_Click;
+            pnlSummary.Controls.Add(btnViewTimetable);
+
+            Button btnViewTranscript = CreateModernButton("📊 Bảng điểm ảo", Color.FromArgb(80, 60, 120), Color.FromArgb(200, 180, 255), 130, 32);
+            btnViewTranscript.Location = new Point(col2X + 140, 45);
+            btnViewTranscript.Click += BtnViewTranscript_Click;
+            pnlSummary.Controls.Add(btnViewTranscript);
+
+            // Logout button - only visible when logged in
+            btnLogout = CreateModernButton("🚪 Đăng xuất", Color.FromArgb(183, 28, 28), Color.White, 110, 32);
+            btnLogout.Location = new Point(col2X + 280, 45);
+            btnLogout.Click += BtnLogout_Click;
+            btnLogout.Visible = Utils.SessionManager.IsLoggedIn; // Initially hidden
+            pnlSummary.Controls.Add(btnLogout);
         }
 
         private Button CreateModernButton(string text, Color bgColor, Color fgColor, int width, int height)
@@ -1293,7 +1312,7 @@ namespace DataMasking
             cpaForm.Controls.Add(lblDistribution);
             y += 35;
 
-            var gradeSliders = new Dictionary<string, (TrackBar slider, Label label, double gradePoint)>
+            var gradeSliders = new Dictionary<string, (TrackBar? slider, Label? label, double gradePoint)>
             {
                 {"A+ (4.0)", (null, null, 4.0)},
                 {"A (3.8)", (null, null, 3.8)},
@@ -1364,7 +1383,7 @@ namespace DataMasking
                     }
 
                     // Calculate weighted average from sliders
-                    double totalPercent = gradeSliders.Values.Sum(v => v.slider.Value);
+                    double totalPercent = gradeSliders.Values.Sum(v => v.slider?.Value ?? 0);
                     if (totalPercent == 0)
                     {
                         MessageBox.Show("Vui lòng điều chỉnh phân bố điểm!", "Thông báo");
@@ -1374,7 +1393,10 @@ namespace DataMasking
                     double weightedGPA = 0;
                     foreach (var grade in gradeSliders.Values)
                     {
-                        weightedGPA += (grade.slider.Value / totalPercent) * grade.gradePoint;
+                        if (grade.slider != null)
+                        {
+                            weightedGPA += (grade.slider.Value / totalPercent) * grade.gradePoint;
+                        }
                     }
 
                     // Calculate final CPA
@@ -1402,7 +1424,7 @@ namespace DataMasking
                     result += "PHÂN BỐ TÍN CHỈ DỰ KIẾN:\n";
                     foreach (var grade in gradeSliders)
                     {
-                        if (grade.Value.slider.Value > 0)
+                        if (grade.Value.slider != null && grade.Value.slider.Value > 0)
                         {
                             int credits = (int)(remainingCredits * grade.Value.slider.Value / totalPercent);
                             result += $"{grade.Key}: {credits} tín chỉ ({grade.Value.slider.Value}%)\n";
@@ -1419,6 +1441,242 @@ namespace DataMasking
             cpaForm.Controls.Add(btnCalculate);
 
             cpaForm.ShowDialog();
+        }
+
+        private async void BtnViewTimetable_Click(object sender, EventArgs e)
+        {
+            // Check if already logged in with cached credentials
+            if (Utils.SessionManager.HasCachedCredentials())
+            {
+                await LoadTimetableWithCachedCredentials();
+                return;
+            }
+
+            // Show login dialog for ACTVN Portal
+            ShowActvnLoginDialog();
+        }
+
+        private async Task LoadTimetableWithCachedCredentials()
+        {
+            try
+            {
+                // Show loading message
+                Form loadingForm = new Form
+                {
+                    Text = "Đang tải...",
+                    Size = new Size(300, 100),
+                    StartPosition = FormStartPosition.CenterParent,
+                    BackColor = ThemeBg,
+                    FormBorderStyle = FormBorderStyle.None
+                };
+
+                Label lblLoading = new Label
+                {
+                    Text = "Đang tải lịch học...",
+                    Dock = DockStyle.Fill,
+                    TextAlign = ContentAlignment.MiddleCenter,
+                    Font = new Font("Segoe UI", 11),
+                    ForeColor = ThemeTextPrimary
+                };
+                loadingForm.Controls.Add(lblLoading);
+                loadingForm.Show();
+
+                var scheduleResponse = await clientService.SendActvnScheduleRequestAsync(
+                    Utils.SessionManager.Username, 
+                    Utils.SessionManager.Password
+                );
+
+                loadingForm.Close();
+
+                if (scheduleResponse.Success)
+                {
+                    var timetableForm = new TimetableCalendarView(scheduleResponse);
+                    timetableForm.FormClosed += (s, e) => 
+                    {
+                        // When timetable form closes, user might want to view it again
+                        Console.WriteLine("[ScoreLookup] Timetable form closed, credentials still cached");
+                    };
+                    timetableForm.Show();
+                }
+                else
+                {
+                    MessageBox.Show($"Không thể tải lịch học!\n\n{scheduleResponse.Message}\n\nVui lòng đăng nhập lại.", 
+                        "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    Utils.SessionManager.Logout();
+                    
+                    // Hide logout button
+                    if (btnLogout != null)
+                        btnLogout.Visible = false;
+                    
+                    ShowActvnLoginDialog();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Lỗi: {ex.Message}\n\nVui lòng đăng nhập lại.", "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Utils.SessionManager.Logout();
+                
+                // Hide logout button
+                if (btnLogout != null)
+                    btnLogout.Visible = false;
+            }
+        }
+
+        private void ShowActvnLoginDialog()
+        {
+            Form loginForm = new Form
+            {
+                Text = "Đăng nhập ACTVN Portal",
+                Size = new Size(450, 250),
+                StartPosition = FormStartPosition.CenterParent,
+                BackColor = ThemeBg,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MaximizeBox = false,
+                MinimizeBox = false
+            };
+
+            Label lblTitle = new Label
+            {
+                Text = "ĐĂNG NHẬP ACTVN PORTAL",
+                Location = new Point(20, 20),
+                AutoSize = true,
+                Font = new Font("Segoe UI", 12, FontStyle.Bold),
+                ForeColor = ThemeAccentHover
+            };
+            loginForm.Controls.Add(lblTitle);
+
+            Label lblUsername = new Label
+            {
+                Text = "Tên đăng nhập:",
+                Location = new Point(20, 60),
+                AutoSize = true,
+                Font = new Font("Segoe UI Semibold", 10),
+                ForeColor = ThemeTextSecondary
+            };
+            loginForm.Controls.Add(lblUsername);
+
+            TextBox txtUsername = new TextBox
+            {
+                Location = new Point(150, 57),
+                Size = new Size(250, 28),
+                BackColor = ThemeInput,
+                ForeColor = ThemeTextPrimary,
+                BorderStyle = BorderStyle.FixedSingle,
+                Font = new Font("Segoe UI", 10)
+            };
+            loginForm.Controls.Add(txtUsername);
+
+            Label lblPassword = new Label
+            {
+                Text = "Mật khẩu:",
+                Location = new Point(20, 100),
+                AutoSize = true,
+                Font = new Font("Segoe UI Semibold", 10),
+                ForeColor = ThemeTextSecondary
+            };
+            loginForm.Controls.Add(lblPassword);
+
+            TextBox txtPassword = new TextBox
+            {
+                Location = new Point(150, 97),
+                Size = new Size(250, 28),
+                PasswordChar = '●',
+                BackColor = ThemeInput,
+                ForeColor = ThemeTextPrimary,
+                BorderStyle = BorderStyle.FixedSingle,
+                Font = new Font("Segoe UI", 10)
+            };
+            loginForm.Controls.Add(txtPassword);
+
+            Button btnLogin = CreateModernButton("Đăng nhập", ThemeAccent, Color.White, 120, 38);
+            btnLogin.Location = new Point(150, 145);
+            btnLogin.Font = new Font("Segoe UI Semibold", 11);
+            loginForm.Controls.Add(btnLogin);
+
+            Button btnCancel = CreateModernButton("Hủy", Color.FromArgb(70, 73, 95), ThemeTextSecondary, 100, 38);
+            btnCancel.Location = new Point(280, 145);
+            btnCancel.Click += (s, ev) => loginForm.Close();
+            loginForm.Controls.Add(btnCancel);
+
+            btnLogin.Click += async (s, ev) =>
+            {
+                if (string.IsNullOrWhiteSpace(txtUsername.Text) || string.IsNullOrWhiteSpace(txtPassword.Text))
+                {
+                    MessageBox.Show("Vui lòng nhập đầy đủ thông tin!", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                btnLogin.Enabled = false;
+                btnLogin.Text = "Đang đăng nhập...";
+
+                try
+                {
+                    var scheduleResponse = await clientService.SendActvnScheduleRequestAsync(txtUsername.Text, txtPassword.Text);
+
+                    if (scheduleResponse.Success)
+                    {
+                        // Cache credentials after successful login
+                        Utils.SessionManager.Login(txtUsername.Text, txtPassword.Text);
+                        
+                        // Show logout button
+                        if (btnLogout != null)
+                            btnLogout.Visible = true;
+                        
+                        MessageBox.Show("Đăng nhập thành công! Đang tải lịch học...", "Thành công", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        loginForm.Close();
+
+                        var timetableForm = new TimetableCalendarView(scheduleResponse);
+                        timetableForm.Show();
+                    }
+                    else
+                    {
+                        MessageBox.Show($"Đăng nhập thất bại!\n\n{scheduleResponse.Message}", "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        btnLogin.Enabled = true;
+                        btnLogin.Text = "Đăng nhập";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Lỗi: {ex.Message}", "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    btnLogin.Enabled = true;
+                    btnLogin.Text = "Đăng nhập";
+                }
+            };
+
+            loginForm.ShowDialog();
+        }
+
+        private void BtnLogout_Click(object sender, EventArgs e)
+        {
+            if (!Utils.SessionManager.IsLoggedIn)
+            {
+                MessageBox.Show("Bạn chưa đăng nhập!", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var result = MessageBox.Show(
+                $"Bạn có chắc muốn đăng xuất?\n\nTài khoản: {Utils.SessionManager.Username}",
+                "Xác nhận đăng xuất",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question
+            );
+
+            if (result == DialogResult.Yes)
+            {
+                Utils.SessionManager.Logout();
+                
+                // Hide logout button
+                if (btnLogout != null)
+                    btnLogout.Visible = false;
+                
+                MessageBox.Show("Đã đăng xuất thành công!", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
+
+        private void BtnViewTranscript_Click(object sender, EventArgs e)
+        {
+            MessageBox.Show("Tính năng Bảng điểm ảo đang được phát triển.\n\nChức năng này sẽ hiển thị bảng điểm từ ACTVN Portal với giao diện tương tự như Xem lịch học.", 
+                "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
     }
 }
