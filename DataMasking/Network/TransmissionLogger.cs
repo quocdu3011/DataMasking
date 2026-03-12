@@ -41,6 +41,21 @@ namespace DataMasking.Network
             }
         }
 
+        // Direct logging methods for Client and Server
+        public static void LogClient(string message)
+        {
+            string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
+            string logMessage = $"[{timestamp}] {message}";
+            OnClientLog?.Invoke(logMessage);
+        }
+
+        public static void LogServer(string message)
+        {
+            string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
+            string logMessage = $"[{timestamp}] {message}";
+            OnServerLog?.Invoke(logMessage);
+        }
+
         public static void LogClientSend(string encryptedData, string encryptedKey, string iv)
         {
             Log("═══════════════════════════════════════════════════════");

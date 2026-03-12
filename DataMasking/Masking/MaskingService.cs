@@ -87,8 +87,6 @@ namespace DataMasking.Masking
                     return ApplyShuffle(value);
                 case MaskingType.FakeData:
                     return ApplyFakeData(fieldType);
-                case MaskingType.NumericNoise:
-                    return ApplyNumericNoise(value);
                 default:
                     return ApplyCharacterMask(value, fieldType);
             }
@@ -140,24 +138,6 @@ namespace DataMasking.Masking
                 case "address": return FakeAddresses[random.Next(FakeAddresses.Length)];
                 default: return "[DỮ LIỆU GIẢ]";
             }
-        }
-
-        // ===== 4. NUMERIC NOISE (Thêm nhiễu vào ký tự số) =====
-
-        private string ApplyNumericNoise(string value)
-        {
-            char[] chars = value.ToCharArray();
-            for (int i = 0; i < chars.Length; i++)
-            {
-                if (char.IsDigit(chars[i]))
-                {
-                    int digit = chars[i] - '0';
-                    int noise = random.Next(-3, 4); // Nhiễu từ -3 đến +3
-                    digit = ((digit + noise) % 10 + 10) % 10; // Giữ trong khoảng 0-9
-                    chars[i] = (char)('0' + digit);
-                }
-            }
-            return new string(chars);
         }
 
         // ===== ORIGINAL MASKING METHODS (Character Mask) =====

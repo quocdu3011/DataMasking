@@ -4,7 +4,6 @@ namespace DataMasking.Masking
     {
         CharacterMask,   // Che mặt nạ ký tự (mặc định)
         Shuffle,         // Xáo trộn dữ liệu
-        FakeData,        // Thay thế bằng dữ liệu giả
-        NumericNoise     // Thêm nhiễu vào ký tự số
+        FakeData         // Thay thế bằng dữ liệu giả
     }
 }
