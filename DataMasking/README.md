@@ -42,7 +42,36 @@ Bảo vệ dữ liệu nhạy cảm khi truyền trên kênh công khai bằng c
 
 ## Tính năng chính
 
-### 1. Data Masking (Che giấu dữ liệu)
+### 1. Tra cứu điểm sinh viên (Score Lookup)
+- Tra cứu điểm theo mã sinh viên
+- Hiển thị GPA, CPA, tổng tín chỉ
+- Bảng quy đổi điểm thang 10 sang thang 4
+- Thống kê phân bố điểm
+- Tính toán CPA mục tiêu
+- Data masking cho thông tin sinh viên
+
+### 2. Bảng điểm ảo (Virtual Transcript) ⭐ MỚI
+- **Yêu cầu đăng nhập**: Phải đăng nhập ACTVN Portal trước khi sử dụng
+- **Tải điểm mã hóa**: Query mã sinh viên từ client xuống server với mã hóa RSA + AES
+- **Chọn môn tính CPA**: Tích checkbox để chọn môn học tính vào CPA dự kiến
+- **Tự động bỏ qua Thể chất**: Môn Thể chất không được tính vào CPA
+- **Nút chọn tất cả**: Chọn tất cả môn học (trừ Thể chất) một lần
+- **Tính CPA dự kiến**: Tự động tính toán CPA dựa trên các môn đã chọn
+- **Bảng quy đổi điểm**: Xem bảng quy đổi điểm thang 10 sang thang 4
+- **Lưu lên server**: Lưu bảng điểm đã chọn vào database (bảng `score_batches` và `score_items`)
+- **Màu sắc trực quan**:
+  - Xanh lá: CPA >= 3.6 (Xuất sắc)
+  - Vàng: CPA >= 3.0 (Giỏi)
+  - Cam: CPA >= 2.5 (Khá)
+  - Đỏ: CPA < 2.5 (Trung bình)
+
+### 3. Xem lịch học (Timetable)
+- Đăng nhập ACTVN Portal
+- Lấy lịch học từ server
+- Hiển thị dạng lịch tuần hoặc calendar
+- Cache credentials để sử dụng lại
+
+### 4. Data Masking (Che giấu dữ liệu)
 - **Họ tên**: Nguyễn Văn An → N****** V** A*
 - **Email**: user@example.com → u***r@example.com
 - **Số điện thoại**: 0901234567 → ******4567

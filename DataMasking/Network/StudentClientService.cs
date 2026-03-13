@@ -80,6 +80,17 @@ namespace DataMasking.Network
                     await stream.ReadAsync(responseLengthBytes, 0, 4);
                     int responseLength = BitConverter.ToInt32(responseLengthBytes, 0);
 
+                    if (responseLength <= 0)
+                    {
+                        TransmissionLogger.LogClient($"[CLIENT] Đã nhận Encrypted Response (0 bytes) - Server không trả về dữ liệu");
+                        TransmissionLogger.LogClient("=======================================================");
+                        return new StudentScoreResponse
+                        {
+                            Success = false,
+                            Message = "Server không trả về dữ liệu. Vui lòng kiểm tra server log."
+                        };
+                    }
+
                     byte[] encryptedResponse = new byte[responseLength];
                     int totalRead = 0;
                     while (totalRead < responseLength)
@@ -89,13 +100,13 @@ namespace DataMasking.Network
                     }
                     string encryptedResponseHex = BitConverter.ToString(encryptedResponse).Replace("-", "");
                     TransmissionLogger.LogClient($"[CLIENT] Đã nhận Encrypted Response ({responseLength} bytes)");
-                    TransmissionLogger.LogClient($"[CLIENT] Encrypted Response (Hex): {encryptedResponseHex.Substring(0, Math.Min(100, encryptedResponseHex.Length))}...");
+                    TransmissionLogger.LogClient($"[CLIENT] Encrypted Response (Hex): {(encryptedResponseHex.Length > 100 ? encryptedResponseHex.Substring(0, 100) + "..." : encryptedResponseHex)}");
 
                     // 9. Giải mã response
                     byte[] decryptedResponse = aes.DecryptCBC(encryptedResponse, aesKey.IV);
                     string responseJson = Encoding.UTF8.GetString(decryptedResponse);
                     TransmissionLogger.LogClient($"[CLIENT] Đã giải mã response");
-                    TransmissionLogger.LogClient($"[CLIENT] Response JSON: {responseJson.Substring(0, Math.Min(200, responseJson.Length))}...");
+                    TransmissionLogger.LogClient($"[CLIENT] Response JSON: {(responseJson.Length > 200 ? responseJson.Substring(0, 200) + "..." : responseJson)}");
 
                     // 10. Parse response với case-insensitive
                     var jsonOptions = new System.Text.Json.JsonSerializerOptions
@@ -160,6 +171,128 @@ namespace DataMasking.Network
         {
             string[] names = { "Che mặt nạ ký tự", "Xáo trộn dữ liệu", "Thay thế dữ liệu giả", "Thêm nhiễu số" };
             return type >= 0 && type < names.Length ? names[type] : "Unknown";
+        }
+
+        public async Task<VirtualScoreResponse> SendVirtualScoreRequestAsync(string studentCode)
+        {
+            try
+            {
+                TransmissionLogger.LogClient("=======================================================");
+                TransmissionLogger.LogClient($"[CLIENT] Virtual Score Request - Student Code: {studentCode}");
+
+                using (TcpClient client = new TcpClient())
+                {
+                    TransmissionLogger.LogClient($"[CLIENT] Connecting to Server {serverHost}:{serverPort}...");
+                    await client.ConnectAsync(serverHost, serverPort);
+                    TransmissionLogger.LogClient("[CLIENT] Connected successfully!");
+
+                    NetworkStream stream = client.GetStream();
+
+                    // 1. Create random AES key
+                    AESKey aesKey = new AESKey();
+                    TransmissionLogger.LogClient($"[CLIENT] Generated AES Key");
+
+                    // 2. Encrypt AES key with RSA
+                    RSA rsa = new RSA(serverPublicKey.N, serverPublicKey.E);
+                    byte[] encryptedAESKey = rsa.Encrypt(aesKey.Key);
+                    TransmissionLogger.LogClient($"[CLIENT] Encrypted AES Key with RSA ({encryptedAESKey.Length} bytes)");
+
+                    // 3. Send encrypted AES key
+                    byte[] keyLengthBytes = BitConverter.GetBytes(encryptedAESKey.Length);
+                    await stream.WriteAsync(keyLengthBytes, 0, 4);
+                    await stream.WriteAsync(encryptedAESKey, 0, encryptedAESKey.Length);
+                    TransmissionLogger.LogClient($"[CLIENT] Sent Encrypted AES Key");
+
+                    // 4. Send IV
+                    await stream.WriteAsync(aesKey.IV, 0, aesKey.IV.Length);
+                    TransmissionLogger.LogClient($"[CLIENT] Sent IV");
+
+                    // 5. Create request
+                    string requestJson = $"{{\"action\":\"virtual_scores\",\"studentCode\":\"{studentCode}\"}}";
+                    TransmissionLogger.LogClient($"[CLIENT] Request JSON: {requestJson}");
+
+                    // 6. Encrypt request
+                    AES aes = new AES(aesKey.Key);
+                    byte[] requestBytes = Encoding.UTF8.GetBytes(requestJson);
+                    byte[] encryptedRequest = aes.EncryptCBC(requestBytes, aesKey.IV);
+                    TransmissionLogger.LogClient($"[CLIENT] Encrypted request ({encryptedRequest.Length} bytes)");
+
+                    // 7. Send encrypted request
+                    byte[] requestLengthBytes = BitConverter.GetBytes(encryptedRequest.Length);
+                    await stream.WriteAsync(requestLengthBytes, 0, 4);
+                    await stream.WriteAsync(encryptedRequest, 0, encryptedRequest.Length);
+                    TransmissionLogger.LogClient($"[CLIENT] Sent encrypted request");
+
+                    // 8. Receive response
+                    TransmissionLogger.LogClient("[CLIENT] Waiting for response...");
+                    byte[] responseLengthBytes = new byte[4];
+                    await stream.ReadAsync(responseLengthBytes, 0, 4);
+                    int responseLength = BitConverter.ToInt32(responseLengthBytes, 0);
+
+                    if (responseLength <= 0)
+                    {
+                        TransmissionLogger.LogClient($"[CLIENT] Received empty response");
+                        TransmissionLogger.LogClient("=======================================================");
+                        return new VirtualScoreResponse
+                        {
+                            Success = false,
+                            Message = "Server không trả về dữ liệu"
+                        };
+                    }
+
+                    byte[] encryptedResponse = new byte[responseLength];
+                    int totalRead = 0;
+                    while (totalRead < responseLength)
+                    {
+                        int read = await stream.ReadAsync(encryptedResponse, totalRead, responseLength - totalRead);
+                        totalRead += read;
+                    }
+                    TransmissionLogger.LogClient($"[CLIENT] Received encrypted response ({responseLength} bytes)");
+
+                    // 9. Decrypt response
+                    byte[] decryptedResponse;
+                    try
+                    {
+                        decryptedResponse = aes.DecryptCBC(encryptedResponse, aesKey.IV);
+                        TransmissionLogger.LogClient($"[CLIENT] Decrypted response successfully ({decryptedResponse.Length} bytes)");
+                    }
+                    catch (Exception decryptEx)
+                    {
+                        TransmissionLogger.LogClient($"[CLIENT] Decryption error: {decryptEx.Message}");
+                        TransmissionLogger.LogClient($"[CLIENT] Encrypted response length: {encryptedResponse.Length}");
+                        TransmissionLogger.LogClient($"[CLIENT] IV length: {aesKey.IV.Length}");
+                        TransmissionLogger.LogClient("=======================================================");
+                        return new VirtualScoreResponse
+                        {
+                            Success = false,
+                            Message = $"Lỗi giải mã: {decryptEx.Message}"
+                        };
+                    }
+                    
+                    string responseJson = Encoding.UTF8.GetString(decryptedResponse);
+                    TransmissionLogger.LogClient($"[CLIENT] Response JSON: {responseJson.Substring(0, Math.Min(200, responseJson.Length))}...");
+
+                    var response = System.Text.Json.JsonSerializer.Deserialize<VirtualScoreResponse>(responseJson, new System.Text.Json.JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    });
+
+                    TransmissionLogger.LogClient($"[CLIENT] Response: Success={response.Success}, Items={response.Items?.Count ?? 0}");
+                    TransmissionLogger.LogClient("=======================================================");
+
+                    return response;
+                }
+            }
+            catch (Exception ex)
+            {
+                TransmissionLogger.LogClient($"[CLIENT] Error: {ex.Message}");
+                TransmissionLogger.LogClient("=======================================================");
+                return new VirtualScoreResponse
+                {
+                    Success = false,
+                    Message = $"Lỗi kết nối: {ex.Message}"
+                };
+            }
         }
 
         public async Task<Models.ActvnScheduleResponse> SendActvnScheduleRequestAsync(string username, string password)
@@ -297,5 +430,24 @@ namespace DataMasking.Network
         public float ScoreOverall { get; set; }
         public string ScoreText { get; set; }
         public bool IsPassed { get; set; }
+    }
+
+    public class VirtualScoreResponse
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; }
+        public System.Collections.Generic.List<VirtualScoreItemDto> Items { get; set; }
+    }
+
+    public class VirtualScoreItemDto
+    {
+        public string SubjectName { get; set; }
+        public long SubjectCredit { get; set; }
+        public float ScoreFirst { get; set; }
+        public float ScoreSecond { get; set; }
+        public float ScoreFinal { get; set; }
+        public float ScoreOverall { get; set; }
+        public string ScoreText { get; set; }
+        public bool IsSelected { get; set; }
     }
 }

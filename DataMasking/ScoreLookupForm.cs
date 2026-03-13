@@ -1448,7 +1448,8 @@ namespace DataMasking
             // Check if already logged in with cached credentials
             if (Utils.SessionManager.HasCachedCredentials())
             {
-                await LoadTimetableWithCachedCredentials();
+                // Don't auto-load, just show login dialog to confirm
+                ShowActvnLoginDialog();
                 return;
             }
 
@@ -1622,9 +1623,10 @@ namespace DataMasking
                         if (btnLogout != null)
                             btnLogout.Visible = true;
                         
-                        MessageBox.Show("Đăng nhập thành công! Đang tải lịch học...", "Thành công", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        MessageBox.Show("Đăng nhập thành công!", "Thành công", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         loginForm.Close();
 
+                        // Open timetable form
                         var timetableForm = new TimetableCalendarView(scheduleResponse);
                         timetableForm.Show();
                     }
@@ -1675,8 +1677,17 @@ namespace DataMasking
 
         private void BtnViewTranscript_Click(object sender, EventArgs e)
         {
-            MessageBox.Show("Tính năng Bảng điểm ảo đang được phát triển.\n\nChức năng này sẽ hiển thị bảng điểm từ ACTVN Portal với giao diện tương tự như Xem lịch học.", 
-                "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            // Check if logged in
+            if (!Utils.SessionManager.IsLoggedIn)
+            {
+                MessageBox.Show("Vui lòng đăng nhập trước khi xem bảng điểm ảo!", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                ShowActvnLoginDialog();
+                return;
+            }
+
+            // Open Virtual Transcript Form với server key pair chung
+            VirtualTranscriptForm virtualForm = new VirtualTranscriptForm(serverKeyPair);
+            virtualForm.Show();
         }
     }
 }

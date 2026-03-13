@@ -354,6 +354,9 @@ namespace DataMasking.Crypto
             if (ciphertext.Length % 16 != 0)
                 throw new ArgumentException("Ciphertext length phải chia hết cho 16");
 
+            if (ciphertext.Length == 0)
+                throw new ArgumentException("Ciphertext không được rỗng");
+
             byte[] plaintext = new byte[ciphertext.Length];
             byte[] previousBlock = iv;
 
@@ -372,8 +375,23 @@ namespace DataMasking.Crypto
                 previousBlock = block;
             }
 
-            // Remove padding
+            // Remove padding - validate PKCS7 padding
             int paddingLength = plaintext[plaintext.Length - 1];
+            
+            // Validate padding length
+            if (paddingLength < 1 || paddingLength > 16)
+                throw new ArgumentException($"Invalid padding length: {paddingLength}");
+            
+            if (paddingLength > plaintext.Length)
+                throw new ArgumentException($"Padding length ({paddingLength}) exceeds plaintext length ({plaintext.Length})");
+            
+            // Verify all padding bytes are correct
+            for (int i = plaintext.Length - paddingLength; i < plaintext.Length; i++)
+            {
+                if (plaintext[i] != paddingLength)
+                    throw new ArgumentException($"Invalid PKCS7 padding at position {i}");
+            }
+            
             byte[] result = new byte[plaintext.Length - paddingLength];
             Array.Copy(plaintext, result, result.Length);
 

@@ -191,8 +191,11 @@ namespace DataMasking
             int cols = 7;
             int rows = (int)Math.Ceiling((daysInMonth + startDayOfWeek) / 7.0);
             
-            int cellWidth = (pnlCalendar.Width - 20) / cols;
-            int cellHeight = Math.Max(150, (pnlCalendar.Height - 60) / rows); // Tăng từ 120 lên 150
+            // Force panel to update its size before calculating
+            pnlCalendar.PerformLayout();
+            
+            int cellWidth = (pnlCalendar.ClientSize.Width - 20) / cols;
+            int cellHeight = Math.Min(130, Math.Max(110, (pnlCalendar.ClientSize.Height - 60) / rows));
 
             // Day headers
             string[] dayNames = { "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật" };
@@ -260,25 +263,27 @@ namespace DataMasking
                 .OrderBy(e => e.Lessons.Min())
                 .ToList();
 
-            int eventY = 40;
-            int maxEvents = (height - 45) / 32; // Tăng spacing từ 25 lên 32
+            int eventY = 35;
+            int eventHeight = 28;
+            int eventSpacing = 3;
+            int maxEvents = Math.Max(1, (height - 40) / (eventHeight + eventSpacing));
             
             for (int i = 0; i < Math.Min(dayEvents.Count, maxEvents); i++)
             {
                 var evt = dayEvents[i];
-                Panel eventPanel = CreateEventBadge(evt, width - 15, eventY);
+                Panel eventPanel = CreateEventBadge(evt, width - 12, eventY, eventHeight);
                 cell.Controls.Add(eventPanel);
-                eventY += 32; // Tăng spacing từ 25 lên 32
+                eventY += eventHeight + eventSpacing;
             }
 
             if (dayEvents.Count > maxEvents)
             {
                 Label lblMore = new Label
                 {
-                    Text = $"+{dayEvents.Count - maxEvents} môn khác",
+                    Text = $"+{dayEvents.Count - maxEvents}",
                     Location = new Point(5, eventY),
-                    Size = new Size(width - 15, 25),
-                    Font = new Font("Segoe UI", 8, FontStyle.Italic), // Tăng từ 7 lên 8
+                    Size = new Size(width - 12, 20),
+                    Font = new Font("Segoe UI", 7, FontStyle.Italic),
                     ForeColor = ThemeAccentHover,
                     BackColor = Color.Transparent,
                     Cursor = Cursors.Hand,
@@ -291,14 +296,14 @@ namespace DataMasking
             return cell;
         }
 
-        private Panel CreateEventBadge(ActvnCalendarEvent evt, int width, int yPos)
+        private Panel CreateEventBadge(ActvnCalendarEvent evt, int width, int yPos, int height = 28)
         {
             Color eventColor = GetCourseColor(evt.CourseCode);
             
             Panel badge = new Panel
             {
                 Location = new Point(5, yPos),
-                Size = new Size(width, 30), // Tăng từ 22 lên 30
+                Size = new Size(width, height),
                 BackColor = eventColor,
                 Cursor = Cursors.Hand,
                 Tag = evt
@@ -306,12 +311,12 @@ namespace DataMasking
 
             Label lblEvent = new Label
             {
-                Text = $"⏰ {evt.StartTime} {(evt.Title.Length > 18 ? evt.Title.Substring(0, 15) + "..." : evt.Title)}",
+                Text = $"⏰ {evt.StartTime} {(evt.Title.Length > 16 ? evt.Title.Substring(0, 13) + "..." : evt.Title)}",
                 Dock = DockStyle.Fill,
-                Font = new Font("Segoe UI", 8, FontStyle.Bold), // Tăng từ 7 lên 8
+                Font = new Font("Segoe UI", 7.5f, FontStyle.Bold),
                 ForeColor = Color.White,
                 BackColor = Color.Transparent,
-                Padding = new Padding(5, 6, 3, 0), // Tăng padding
+                Padding = new Padding(4, 5, 2, 0),
                 TextAlign = ContentAlignment.MiddleLeft
             };
             badge.Controls.Add(lblEvent);

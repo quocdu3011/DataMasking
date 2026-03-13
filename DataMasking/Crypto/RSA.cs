@@ -65,11 +65,18 @@ namespace DataMasking.Crypto
             BigInteger decrypted = BigMath.ModPow(encrypted, d, n);
             byte[] result = decrypted.ToByteArray();
             
-            // Loại bỏ byte padding cuối cùng (0 byte)
-            if (result.Length > 0 && result[result.Length - 1] == 0)
+            // BigInteger.ToByteArray() trả về little-endian với byte 0 ở cuối nếu số dương
+            // Loại bỏ tất cả các byte padding 0 ở cuối được thêm bởi Encrypt
+            int trimLength = result.Length;
+            while (trimLength > 0 && result[trimLength - 1] == 0)
             {
-                byte[] trimmed = new byte[result.Length - 1];
-                Array.Copy(result, trimmed, trimmed.Length);
+                trimLength--;
+            }
+            
+            if (trimLength < result.Length)
+            {
+                byte[] trimmed = new byte[trimLength];
+                Array.Copy(result, trimmed, trimLength);
                 return trimmed;
             }
             

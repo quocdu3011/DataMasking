@@ -86,7 +86,32 @@ namespace DataMasking.Network
                 // 2. Giải mã AES key bằng RSA private key
                 RSA rsa = new RSA(serverKeyPair.N, serverKeyPair.E, serverKeyPair.D);
                 byte[] aesKey = rsa.Decrypt(encryptedAESKey);
-                TransmissionLogger.LogServer($"[SERVER] Đã giải mã AES Key: {BitConverter.ToString(aesKey).Substring(0, 47)}...");
+                
+                // Validate key length
+                if (aesKey.Length != 16 && aesKey.Length != 24 && aesKey.Length != 32)
+                {
+                    TransmissionLogger.LogServer($"[SERVER] CẢNH BÁO: AES Key length không hợp lệ: {aesKey.Length} bytes");
+                    TransmissionLogger.LogServer($"[SERVER] Full AES Key (Hex): {BitConverter.ToString(aesKey)}");
+                    
+                    // Nếu key dài hơn 32 bytes, cắt về 32 bytes
+                    if (aesKey.Length > 32)
+                    {
+                        byte[] trimmedKey = new byte[32];
+                        Array.Copy(aesKey, trimmedKey, 32);
+                        aesKey = trimmedKey;
+                        TransmissionLogger.LogServer($"[SERVER] Đã trim key về 32 bytes");
+                    }
+                    // Nếu key ngắn hơn 16 bytes, pad thêm
+                    else if (aesKey.Length < 16)
+                    {
+                        byte[] paddedKey = new byte[16];
+                        Array.Copy(aesKey, paddedKey, aesKey.Length);
+                        aesKey = paddedKey;
+                        TransmissionLogger.LogServer($"[SERVER] Đã pad key lên 16 bytes");
+                    }
+                }
+                
+                TransmissionLogger.LogServer($"[SERVER] Đã giải mã AES Key ({aesKey.Length} bytes): {BitConverter.ToString(aesKey).Substring(0, Math.Min(47, BitConverter.ToString(aesKey).Length))}...");
 
                 // 3. Nhận IV
                 byte[] iv = new byte[16];
@@ -139,6 +164,16 @@ namespace DataMasking.Network
                     else if (action == "actvn_schedule")
                     {
                         await HandleActvnSchedule(requestJson, stream, aes, iv);
+                        return;
+                    }
+                    else if (action == "virtual_scores")
+                    {
+                        await HandleVirtualScores(requestJson, stream, aes, iv);
+                        return;
+                    }
+                    else if (action == "save_virtual_scores")
+                    {
+                        await HandleSaveVirtualScores(requestJson, stream, aes, iv);
                         return;
                     }
                 }
@@ -603,6 +638,240 @@ namespace DataMasking.Network
             await stream.WriteAsync(responseLengthBytes, 0, 4);
             await stream.WriteAsync(encryptedResponse, 0, encryptedResponse.Length);
         }
+
+        private async Task HandleVirtualScores(string requestJson, System.Net.Sockets.NetworkStream stream, AES aes, byte[] iv)
+        {
+            try
+            {
+                var jsonOptions = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var request = System.Text.Json.JsonSerializer.Deserialize<VirtualScoreRequest>(requestJson, jsonOptions);
+
+                TransmissionLogger.LogServer($"[SERVER] Virtual Scores request - Student Code: {request.StudentCode}");
+
+                VirtualScoreResponse response;
+
+                using (var conn = new MySql.Data.MySqlClient.MySqlConnection(
+                    "Server=36.50.54.109;Port=3306;Database=kmalegend;Uid=anonymous;Pwd=1;CharSet=utf8;SslMode=None;AllowPublicKeyRetrieval=True;"))
+                {
+                    conn.Open();
+
+                    // Check if batch exists for this student
+                    string getBatchQuery = @"SELECT batch_id FROM score_batches 
+                        WHERE student_code = @code 
+                        ORDER BY last_updated DESC LIMIT 1";
+
+                    long batchId = 0;
+                    using (var cmd = new MySql.Data.MySqlClient.MySqlCommand(getBatchQuery, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@code", request.StudentCode);
+                        var result = cmd.ExecuteScalar();
+
+                        if (result == null)
+                        {
+                            TransmissionLogger.LogServer($"[SERVER] No virtual scores found for student: {request.StudentCode}");
+                            response = new VirtualScoreResponse
+                            {
+                                Success = true,
+                                Message = "Chưa có dữ liệu bảng điểm ảo",
+                                Items = new List<VirtualScoreItemDto>()
+                            };
+                            await SendEncryptedResponse(response, stream, aes, iv);
+                            return;
+                        }
+
+                        batchId = Convert.ToInt64(result);
+                        TransmissionLogger.LogServer($"[SERVER] Found batch_id: {batchId}");
+                    }
+
+                    // Get all items for this batch
+                    string getItemsQuery = @"SELECT subject_name, subject_credit, score_first, score_second, 
+                        score_final, score_overall, score_text, is_selected 
+                        FROM score_items WHERE batch_id = @batchId";
+
+                    var items = new List<VirtualScoreItemDto>();
+                    using (var cmd = new MySql.Data.MySqlClient.MySqlCommand(getItemsQuery, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@batchId", batchId);
+                        using (var reader = cmd.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                items.Add(new VirtualScoreItemDto
+                                {
+                                    SubjectName = reader.IsDBNull(reader.GetOrdinal("subject_name")) ? "" : reader.GetString("subject_name"),
+                                    SubjectCredit = reader.IsDBNull(reader.GetOrdinal("subject_credit")) ? 0 : reader.GetInt64("subject_credit"),
+                                    ScoreFirst = reader.IsDBNull(reader.GetOrdinal("score_first")) ? 0f : reader.GetFloat("score_first"),
+                                    ScoreSecond = reader.IsDBNull(reader.GetOrdinal("score_second")) ? 0f : reader.GetFloat("score_second"),
+                                    ScoreFinal = reader.IsDBNull(reader.GetOrdinal("score_final")) ? 0f : reader.GetFloat("score_final"),
+                                    ScoreOverall = reader.IsDBNull(reader.GetOrdinal("score_overall")) ? 0f : reader.GetFloat("score_overall"),
+                                    ScoreText = reader.IsDBNull(reader.GetOrdinal("score_text")) ? "" : reader.GetString("score_text"),
+                                    IsSelected = reader.IsDBNull(reader.GetOrdinal("is_selected")) ? false : reader.GetBoolean("is_selected")
+                                });
+                            }
+                        }
+                    }
+
+                    TransmissionLogger.LogServer($"[SERVER] Loaded {items.Count} virtual score items");
+
+                    response = new VirtualScoreResponse
+                    {
+                        Success = true,
+                        Message = "Lấy dữ liệu thành công",
+                        Items = items
+                    };
+                }
+
+                await SendEncryptedResponse(response, stream, aes, iv);
+            }
+            catch (Exception ex)
+            {
+                TransmissionLogger.LogServer($"[SERVER] Error in HandleVirtualScores: {ex.Message}");
+                TransmissionLogger.LogServer($"[SERVER] Stack trace: {ex.StackTrace}");
+                var errorResponse = new VirtualScoreResponse
+                {
+                    Success = false,
+                    Message = $"Lỗi: {ex.Message}",
+                    Items = new List<VirtualScoreItemDto>()
+                };
+                await SendEncryptedResponse(errorResponse, stream, aes, iv);
+            }
+        }
+
+        private async Task HandleSaveVirtualScores(string requestJson, System.Net.Sockets.NetworkStream stream, AES aes, byte[] iv)
+        {
+            try
+            {
+                TransmissionLogger.LogServer($"[SERVER] Save Virtual Scores request");
+                TransmissionLogger.LogServer($"[SERVER] Request JSON: {requestJson.Substring(0, Math.Min(200, requestJson.Length))}...");
+
+                var request = System.Text.Json.JsonSerializer.Deserialize<SaveVirtualScoreRequest>(requestJson, new System.Text.Json.JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                TransmissionLogger.LogServer($"[SERVER] Save request - Student Code: {request.StudentCode}, Scores count: {request.Scores?.Count ?? 0}");
+
+                bool success = false;
+                string message = "";
+
+                using (var conn = new MySql.Data.MySqlClient.MySqlConnection(
+                    "Server=36.50.54.109;Port=3306;Database=kmalegend;Uid=anonymous;Pwd=1;CharSet=utf8;SslMode=None;AllowPublicKeyRetrieval=True;"))
+                {
+                    conn.Open();
+
+                    // Get student info
+                    var student = dbManager.GetStudentByCode(request.StudentCode);
+                    if (student == null)
+                    {
+                        TransmissionLogger.LogServer($"[SERVER] Student not found: {request.StudentCode}");
+                        message = "Không tìm thấy sinh viên";
+                    }
+                    else
+                    {
+                        // Start transaction
+                        using (var transaction = conn.BeginTransaction())
+                        {
+                            try
+                            {
+                                // 1. Delete all old score_items for this student
+                                string deleteItemsQuery = @"DELETE si FROM score_items si 
+                                    INNER JOIN score_batches sb ON si.batch_id = sb.batch_id 
+                                    WHERE sb.student_code = @code";
+                                using (var cmd = new MySql.Data.MySqlClient.MySqlCommand(deleteItemsQuery, conn, transaction))
+                                {
+                                    cmd.Parameters.AddWithValue("@code", request.StudentCode);
+                                    int deletedItems = cmd.ExecuteNonQuery();
+                                    TransmissionLogger.LogServer($"[SERVER] Deleted {deletedItems} old score items");
+                                }
+
+                                // 2. Delete old batch if exists
+                                string deleteBatchQuery = "DELETE FROM score_batches WHERE student_code = @code";
+                                using (var cmd = new MySql.Data.MySqlClient.MySqlCommand(deleteBatchQuery, conn, transaction))
+                                {
+                                    cmd.Parameters.AddWithValue("@code", request.StudentCode);
+                                    int deletedBatches = cmd.ExecuteNonQuery();
+                                    TransmissionLogger.LogServer($"[SERVER] Deleted {deletedBatches} old batches");
+                                }
+
+                                // 3. Insert new batch
+                                string insertBatchQuery = @"INSERT INTO score_batches 
+                                    (student_code, student_name, student_class, last_updated) 
+                                    VALUES (@code, @name, @class, @updated)";
+
+                                long batchId;
+                                using (var cmd = new MySql.Data.MySqlClient.MySqlCommand(insertBatchQuery, conn, transaction))
+                                {
+                                    cmd.Parameters.AddWithValue("@code", student.StudentCode);
+                                    cmd.Parameters.AddWithValue("@name", student.StudentName);
+                                    cmd.Parameters.AddWithValue("@class", student.StudentClass);
+                                    cmd.Parameters.AddWithValue("@updated", DateTime.Now);
+                                    cmd.ExecuteNonQuery();
+                                    batchId = cmd.LastInsertedId;
+                                    TransmissionLogger.LogServer($"[SERVER] Created new batch with ID: {batchId}");
+                                }
+
+                                // 4. Insert all new items
+                                string insertItemQuery = @"INSERT INTO score_items 
+                                    (batch_id, subject_name, subject_credit, score_first, score_second, 
+                                     score_final, score_overall, score_text, is_selected) 
+                                    VALUES (@batchId, @name, @credit, @first, @second, @final, @overall, @text, @selected)";
+
+                                int insertedCount = 0;
+                                foreach (var score in request.Scores)
+                                {
+                                    using (var cmd = new MySql.Data.MySqlClient.MySqlCommand(insertItemQuery, conn, transaction))
+                                    {
+                                        cmd.Parameters.AddWithValue("@batchId", batchId);
+                                        cmd.Parameters.AddWithValue("@name", score.SubjectName);
+                                        cmd.Parameters.AddWithValue("@credit", score.SubjectCredit);
+                                        cmd.Parameters.AddWithValue("@first", score.ScoreFirst);
+                                        cmd.Parameters.AddWithValue("@second", score.ScoreSecond);
+                                        cmd.Parameters.AddWithValue("@final", score.ScoreFinal);
+                                        cmd.Parameters.AddWithValue("@overall", score.ScoreOverall);
+                                        cmd.Parameters.AddWithValue("@text", score.ScoreText);
+                                        cmd.Parameters.AddWithValue("@selected", score.IsSelected);
+                                        cmd.ExecuteNonQuery();
+                                        insertedCount++;
+                                    }
+                                }
+
+                                // Commit transaction
+                                transaction.Commit();
+                                TransmissionLogger.LogServer($"[SERVER] Successfully saved {insertedCount} score items");
+                                success = true;
+                                message = $"Đã lưu {insertedCount} môn học thành công";
+                            }
+                            catch (Exception ex)
+                            {
+                                transaction.Rollback();
+                                TransmissionLogger.LogServer($"[SERVER] Transaction rolled back: {ex.Message}");
+                                message = $"Lỗi lưu dữ liệu: {ex.Message}";
+                            }
+                        }
+                    }
+                }
+
+                var response = new
+                {
+                    success = success,
+                    message = message
+                };
+
+                await SendEncryptedResponse(response, stream, aes, iv);
+                TransmissionLogger.LogServer($"[SERVER] Save response sent: Success={success}");
+            }
+            catch (Exception ex)
+            {
+                TransmissionLogger.LogServer($"[SERVER] Error in HandleSaveVirtualScores: {ex.Message}");
+                TransmissionLogger.LogServer($"[SERVER] Stack trace: {ex.StackTrace}");
+                var errorResponse = new
+                {
+                    success = false,
+                    message = $"Lỗi server: {ex.Message}"
+                };
+                await SendEncryptedResponse(errorResponse, stream, aes, iv);
+            }
+        }
     }
 
     public class StudentScoreRequest
@@ -610,5 +879,30 @@ namespace DataMasking.Network
         public string Action { get; set; }
         public string StudentCode { get; set; }
         public int MaskingType { get; set; }
+    }
+
+    public class VirtualScoreRequest
+    {
+        public string Action { get; set; }
+        public string StudentCode { get; set; }
+    }
+
+    public class SaveVirtualScoreRequest
+    {
+        public string Action { get; set; }
+        public string StudentCode { get; set; }
+        public List<SaveVirtualScoreItemDto> Scores { get; set; }
+    }
+
+    public class SaveVirtualScoreItemDto
+    {
+        public string SubjectName { get; set; }
+        public long SubjectCredit { get; set; }
+        public float ScoreFirst { get; set; }
+        public float ScoreSecond { get; set; }
+        public float ScoreFinal { get; set; }
+        public float ScoreOverall { get; set; }
+        public string ScoreText { get; set; }
+        public bool IsSelected { get; set; }
     }
 }
