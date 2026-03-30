@@ -43,7 +43,8 @@ namespace DataMasking.Network
                 TransmissionLogger.Log("CLIENT: Đã kết nối thành công!");
 
                 // Tạo packet mã hóa
-                TransmissionPacket packet = CreateSecurePacket(username, password, fullName, email, phone, creditCard, ssn, address, maskingType);
+                var securePayload = CreateSecurePacket(username, password, fullName, email, phone, creditCard, ssn, address, maskingType);
+                TransmissionPacket packet = securePayload.Packet;
 
                 // Serialize packet thành JSON
                 string packetJson = System.Text.Json.JsonSerializer.Serialize(packet);
@@ -74,8 +75,10 @@ namespace DataMasking.Network
                     totalRead += read;
                 }
 
-                // Deserialize response
-                string responseJson = Encoding.UTF8.GetString(responseBuffer);
+                // Giải mã response bằng chính AES key/IV đã dùng để gửi request
+                AES responseAes = new AES(securePayload.AesKey);
+                byte[] decryptedResponseBytes = responseAes.DecryptCBC(responseBuffer, securePayload.IV);
+                string responseJson = Encoding.UTF8.GetString(decryptedResponseBytes);
                 ServerResponse response = System.Text.Json.JsonSerializer.Deserialize<ServerResponse>(responseJson);
 
                 TransmissionLogger.Log($"CLIENT: Đã nhận response từ server");
@@ -116,7 +119,8 @@ namespace DataMasking.Network
                 TransmissionLogger.Log("CLIENT: Đã kết nối thành công!");
 
                 // Tạo packet mã hóa cho LOGIN
-                TransmissionPacket packet = CreateSecureLoginPacket(username, password);
+                var securePayload = CreateSecureLoginPacket(username, password);
+                TransmissionPacket packet = securePayload.Packet;
 
                 // Serialize packet thành JSON
                 string packetJson = System.Text.Json.JsonSerializer.Serialize(packet);
@@ -147,8 +151,10 @@ namespace DataMasking.Network
                     totalRead += read;
                 }
 
-                // Deserialize response
-                string responseJson = Encoding.UTF8.GetString(responseBuffer);
+                // Giải mã response bằng chính AES key/IV đã dùng để gửi request
+                AES responseAes = new AES(securePayload.AesKey);
+                byte[] decryptedResponseBytes = responseAes.DecryptCBC(responseBuffer, securePayload.IV);
+                string responseJson = Encoding.UTF8.GetString(decryptedResponseBytes);
                 ServerResponse response = System.Text.Json.JsonSerializer.Deserialize<ServerResponse>(responseJson);
 
                 TransmissionLogger.Log($"CLIENT: Đã nhận response từ server");
@@ -172,9 +178,9 @@ namespace DataMasking.Network
         }
         
         // Tạo packet mã hóa
-        private TransmissionPacket CreateSecurePacket(string username, string password, string fullName, string email, string phone,
-                                                       string creditCard, string ssn, string address,
-                                                       MaskingType maskingType)
+        private ClientSecurePayload CreateSecurePacket(string username, string password, string fullName, string email, string phone,
+                                   string creditCard, string ssn, string address,
+                                   MaskingType maskingType)
         {
             TransmissionLogger.Log("CLIENT: Bắt đầu chuẩn bị dữ liệu (SUBMIT) để gửi...");
             TransmissionLogger.Log($"CLIENT: Phương thức masking: {maskingType}");
@@ -214,11 +220,16 @@ namespace DataMasking.Network
             // Log dữ liệu trên kênh truyền
             TransmissionLogger.LogClientSend(packet.EncryptedData, packet.EncryptedAESKey, packet.IV);
 
-            return packet;
+            return new ClientSecurePayload
+            {
+                Packet = packet,
+                AesKey = aesKey.Key,
+                IV = aesKey.IV
+            };
         }
 
         // Tạo packet mã hóa cho yêu cầu đăng nhập
-        private TransmissionPacket CreateSecureLoginPacket(string username, string password)
+        private ClientSecurePayload CreateSecureLoginPacket(string username, string password)
         {
             TransmissionLogger.Log("CLIENT: Bắt đầu chuẩn bị dữ liệu LOGIN để gửi...");
 
@@ -251,8 +262,20 @@ namespace DataMasking.Network
             // Log dữ liệu trên kênh truyền
             TransmissionLogger.LogClientSend(packet.EncryptedData, packet.EncryptedAESKey, packet.IV);
 
-            return packet;
+            return new ClientSecurePayload
+            {
+                Packet = packet,
+                AesKey = aesKey.Key,
+                IV = aesKey.IV
+            };
         }
+    }
+
+    public class ClientSecurePayload
+    {
+        public TransmissionPacket Packet { get; set; } = new TransmissionPacket();
+        public byte[] AesKey { get; set; } = Array.Empty<byte>();
+        public byte[] IV { get; set; } = Array.Empty<byte>();
     }
 
     // Packet dữ liệu truyền trên kênh công khai

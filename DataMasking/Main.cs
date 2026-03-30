@@ -45,7 +45,7 @@ namespace DataMasking
             maskingService = new MaskingService();
 
             // Khởi tạo database manager với connection string mặc định
-            dbManager = new DatabaseManager("36.50.54.109", "datamasking_db", "anonymous", "1", 3306);
+            dbManager = new DatabaseManager("36.50.54.109", "datamasking_db", "anonymous", "Thuanld@255", 3306);
 
             // Tạo RSA key pair cho server TRƯỚC KHI khởi tạo UI
             serverKeyPair = new RSAKeyPair(1024);

@@ -52,7 +52,7 @@ namespace DataMasking
 
         public ScoreLookupForm()
         {
-            dbManager = new StudentDatabaseManager("36.50.54.109", "kmalegend", "anonymous", "1", 3306);
+            dbManager = new StudentDatabaseManager("36.50.54.109", "kmalegend", "anonymous", "Thuanld@255", 3306);
             maskingService = new MaskingService();
             
             // Tạo RSA key pair cho server
@@ -919,7 +919,7 @@ namespace DataMasking
             {
                 Location = new Point(150, y - 3),
                 Size = new Size(300, 28),
-                Text = "1",
+                Text = "Thuanld@255",
                 PasswordChar = '●',
                 BackColor = ThemeInput,
                 ForeColor = ThemeTextPrimary,

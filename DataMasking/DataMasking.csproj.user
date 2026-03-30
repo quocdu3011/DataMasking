@@ -10,5 +10,20 @@
     <Compile Update="Main.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Update="ScoreLookupForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Update="TimetableCalendarView.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Update="TimetableViewForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Update="TimetableWeekView.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Update="VirtualTranscriptForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
   </ItemGroup>
 </Project>

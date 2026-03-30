@@ -46,7 +46,7 @@ namespace DataMasking
 
         public VirtualTranscriptForm()
         {
-            dbManager = new StudentDatabaseManager("36.50.54.109", "kmalegend", "anonymous", "1", 3306);
+            dbManager = new StudentDatabaseManager("36.50.54.109", "kmalegend", "anonymous", "Thuanld@255", 3306);
             maskingService = new MaskingService(); // Khởi tạo masking service
             
             // Sử dụng server public key từ server đang chạy

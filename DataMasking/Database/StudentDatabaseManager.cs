@@ -10,7 +10,7 @@ namespace DataMasking.Database
         private string connectionString;
 
         public StudentDatabaseManager(string server = "36.50.54.109", string database = "kmalegend", 
-                                     string user = "anonymous", string password = "1", int port = 3306)
+                                     string user = "anonymous", string password = "Thuanld@255", int port = 3306)
         {
             connectionString = $"Server={server};Port={port};Database={database};Uid={user};Pwd={password};CharSet=utf8;SslMode=None;AllowPublicKeyRetrieval=True;";
         }

@@ -113,9 +113,8 @@ namespace DataMasking.Network
                 // Xử lý request
                 ServerResponse response = ProcessSecureRequest(packet);
 
-                // Gửi response về client
-                string responseJson = JsonSerializer.Serialize(response);
-                byte[] responseBytes = Encoding.UTF8.GetBytes(responseJson);
+                // Mã hóa response bằng chính AES key/IV client đã dùng cho request
+                byte[] responseBytes = EncryptResponseWithClientSessionKey(response, packet);
                 byte[] responseSizeBytes = BitConverter.GetBytes(responseBytes.Length);
 
                 await stream.WriteAsync(responseSizeBytes, 0, 4);
@@ -149,17 +148,8 @@ namespace DataMasking.Network
 
                 TransmissionLogger.Log($"SERVER: Đã giải mã AES key (length: {aesKeyBytes.Length} bytes)");
 
-                // Đảm bảo key đúng kích thước 32 bytes
-                byte[] aesKey = new byte[32];
-                if (aesKeyBytes.Length >= 32)
-                {
-                    Array.Copy(aesKeyBytes, aesKey, 32);
-                }
-                else
-                {
-                    // Nếu key ngắn hơn, copy toàn bộ và pad với 0
-                    Array.Copy(aesKeyBytes, aesKey, aesKeyBytes.Length);
-                }
+                // Đảm bảo key đúng kích thước AES-256 (32 bytes)
+                byte[] aesKey = NormalizeAes256Key(aesKeyBytes);
 
                 // Bước 2: Giải mã dữ liệu bằng AES key
                 TransmissionLogger.Log("SERVER: Đang giải mã dữ liệu bằng AES-256...");
@@ -272,6 +262,39 @@ namespace DataMasking.Network
                     Message = "Lỗi xử lý dữ liệu: " + ex.Message
                 };
             }
+        }
+
+        private byte[] EncryptResponseWithClientSessionKey(ServerResponse response, TransmissionPacket packet)
+        {
+            string responseJson = JsonSerializer.Serialize(response);
+            byte[] responsePlainBytes = Encoding.UTF8.GetBytes(responseJson);
+
+            RSA rsa = new RSA(serverKeyPair.N, serverKeyPair.E, serverKeyPair.D);
+            byte[] encryptedKeyBytes = Convert.FromBase64String(packet.EncryptedAESKey);
+            byte[] decryptedKeyBytes = rsa.Decrypt(encryptedKeyBytes);
+            byte[] aesKey = NormalizeAes256Key(decryptedKeyBytes);
+            byte[] ivBytes = Convert.FromBase64String(packet.IV);
+
+            AES aes = new AES(aesKey);
+            byte[] encryptedResponse = aes.EncryptCBC(responsePlainBytes, ivBytes);
+
+            TransmissionLogger.Log($"SERVER: Response JSON đã được mã hóa AES ({encryptedResponse.Length} bytes)");
+            return encryptedResponse;
+        }
+
+        private static byte[] NormalizeAes256Key(byte[] keyBytes)
+        {
+            byte[] normalizedKey = new byte[32];
+            if (keyBytes.Length >= 32)
+            {
+                Array.Copy(keyBytes, normalizedKey, 32);
+            }
+            else
+            {
+                Array.Copy(keyBytes, normalizedKey, keyBytes.Length);
+            }
+
+            return normalizedKey;
         }
     }
 
