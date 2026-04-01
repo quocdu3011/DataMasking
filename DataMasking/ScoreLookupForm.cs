@@ -532,6 +532,20 @@ namespace DataMasking
 
                 await Task.Delay(300);
 
+                // Open server log window first so logs are visible
+                OpenServerLogWindow();
+
+                // Log key pair before starting
+                TransmissionLogger.LogServer("=======================================================");
+                TransmissionLogger.LogServer("[SERVER] === RSA KEY PAIR ===");
+                TransmissionLogger.LogServer($"[SERVER] Public Key (Base64): {serverKeyPair.GetPublicKeyBase64()}");
+                TransmissionLogger.LogServer($"[SERVER] Private Key (Base64): {serverKeyPair.GetPrivateKeyBase64()}");
+                TransmissionLogger.LogServer($"[SERVER] E: {serverKeyPair.E}");
+                TransmissionLogger.LogServer($"[SERVER] N ({serverKeyPair.N.ToString().Length} digits): {serverKeyPair.N}");
+                TransmissionLogger.LogServer($"[SERVER] D ({serverKeyPair.D.ToString().Length} digits): {serverKeyPair.D}");
+                TransmissionLogger.LogServer("[SERVER] === END KEY PAIR ===");
+                TransmissionLogger.LogServer("=======================================================");
+
                 // Start server
                 _ = Task.Run(() => serverService.Start(8888));
                 isServerRunning = true;
@@ -541,9 +555,6 @@ namespace DataMasking
                 btnStopServer.Enabled = true;
                 lblServerStatus.Text = "● RUNNING";
                 lblServerStatus.ForeColor = ThemeSuccess;
-
-                // Open server log window
-                OpenServerLogWindow();
             }
             catch (Exception ex)
             {
@@ -649,7 +660,7 @@ namespace DataMasking
                 BackColor = Color.Black,
                 ForeColor = Color.LimeGreen,
                 Font = new Font("Consolas", 9),
-                WordWrap = false,
+                WordWrap = true,
                 BorderStyle = BorderStyle.None
             };
             serverLogForm.Controls.Add(txtServerLog);

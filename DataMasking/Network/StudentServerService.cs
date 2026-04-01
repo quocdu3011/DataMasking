@@ -40,11 +40,7 @@ namespace DataMasking.Network
             isRunning = true;
             cancellationTokenSource = new CancellationTokenSource();
 
-            TransmissionLogger.LogServer("=======================================================");
-            TransmissionLogger.LogServer($"[SERVER] Đã khởi động trên Port {port}");
-            TransmissionLogger.LogServer($"[SERVER] RSA Key sẵn sàng (N: {serverKeyPair.N.ToString().Length} digits)");
-            TransmissionLogger.LogServer("[SERVER] Đang chờ kết nối từ Client...");
-            TransmissionLogger.LogServer("=======================================================");
+            TransmissionLogger.LogServer($"[SERVER] Đang chờ kết nối trên Port {port}...");
 
             while (isRunning && !cancellationTokenSource.Token.IsCancellationRequested)
             {
@@ -651,7 +647,7 @@ namespace DataMasking.Network
                 VirtualScoreResponse response;
 
                 using (var conn = new MySql.Data.MySqlClient.MySqlConnection(
-                    "Server=36.50.54.109;Port=3306;Database=kmalegend;Uid=anonymous;Pwd=1;CharSet=utf8;SslMode=None;AllowPublicKeyRetrieval=True;"))
+                    "Server=36.50.54.109;Port=3306;Database=kmalegend;Uid=anonymous;Pwd=Thuanld@255;CharSet=utf8;SslMode=None;AllowPublicKeyRetrieval=True;"))
                 {
                     conn.Open();
 
@@ -755,7 +751,7 @@ namespace DataMasking.Network
                 string message = "";
 
                 using (var conn = new MySql.Data.MySqlClient.MySqlConnection(
-                    "Server=36.50.54.109;Port=3306;Database=kmalegend;Uid=anonymous;Pwd=1;CharSet=utf8;SslMode=None;AllowPublicKeyRetrieval=True;"))
+                    "Server=36.50.54.109;Port=3306;Database=kmalegend;Uid=anonymous;Pwd=Thuanld@255;CharSet=utf8;SslMode=None;AllowPublicKeyRetrieval=True;"))
                 {
                     conn.Open();
 

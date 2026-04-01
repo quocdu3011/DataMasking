@@ -27,7 +27,7 @@ namespace DataMasking
         private Button btnSelectAll;
         private Button btnSaveToServer;
         private Button btnGradeTable;
-        private TextBox txtClientLog;
+        private RichTextBox txtClientLog;
         
         private bool isSelectAllMode = true; // Track select all/unselect all mode
         
@@ -201,18 +201,17 @@ namespace DataMasking
             btnClearClientLog.Click += (s, e) => txtClientLog?.Clear();
             pnlClientLog.Controls.Add(btnClearClientLog);
 
-            txtClientLog = new TextBox
+            txtClientLog = new RichTextBox
             {
                 Location = new Point(10, 40),
                 Size = new Size(600, 630),
-                Multiline = true,
-                ScrollBars = ScrollBars.Vertical,
                 ReadOnly = true,
                 BackColor = Color.FromArgb(20, 15, 30),
                 ForeColor = Color.FromArgb(186, 104, 200),
                 Font = new Font("Cascadia Code", 8.5f),
                 BorderStyle = BorderStyle.None,
-                WordWrap = false
+                WordWrap = false,
+                ScrollBars = RichTextBoxScrollBars.Both
             };
             pnlClientLog.Controls.Add(txtClientLog);
 
@@ -363,22 +362,13 @@ namespace DataMasking
                 if (student != null)
                 {
                     LogClient($"[CLIENT] Student found in DB: {student.StudentName} - {student.StudentClass}");
-                    
-                    // Apply masking to student info
-                    string maskedName = maskingService.MaskName(student.StudentName);
-                    string maskedCode = MaskStudentCode(student.StudentCode);
-                    string maskedClass = MaskClass(student.StudentClass);
-                    
-                    LogClient($"[CLIENT] Applied masking - Code: {maskedCode}, Name: {maskedName}, Class: {maskedClass}");
-                    
-                    lblStudentInfo.Text = $"Mã SV: {maskedCode}  |  Họ tên: {maskedName}  |  Lớp: {maskedClass}";
+                    lblStudentInfo.Text = $"Mã SV: {student.StudentCode}  |  Họ tên: {student.StudentName}  |  Lớp: {student.StudentClass}";
                     lblStudentInfo.ForeColor = ThemeSuccess;
                 }
                 else
                 {
                     LogClient("[CLIENT] Student not found in database");
-                    string maskedCode = MaskStudentCode(studentCode);
-                    lblStudentInfo.Text = $"Mã SV: {maskedCode} (Chưa có thông tin)";
+                    lblStudentInfo.Text = $"Mã SV: {studentCode} (Chưa có thông tin)";
                     lblStudentInfo.ForeColor = ThemeWarn;
                 }
 
