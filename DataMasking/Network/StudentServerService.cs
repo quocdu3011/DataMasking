@@ -162,6 +162,11 @@ namespace DataMasking.Network
                         await HandleActvnSchedule(requestJson, stream, aes, iv);
                         return;
                     }
+                    else if (action == "actvn_profile")
+                    {
+                        await HandleActvnProfile(requestJson, stream, aes, iv);
+                        return;
+                    }
                     else if (action == "virtual_scores")
                     {
                         await HandleVirtualScores(requestJson, stream, aes, iv);
@@ -488,8 +493,58 @@ namespace DataMasking.Network
             TransmissionLogger.LogServer("[SERVER] Đã dừng");
         }
 
-        private async Task HandleActvnLogin(string requestJson, System.Net.Sockets.NetworkStream stream, AES aes, byte[] iv)
+        private async Task HandleActvnProfile(string requestJson, System.Net.Sockets.NetworkStream stream, AES aes, byte[] iv)
         {
+            try
+            {
+                var jsonOptions = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var request = System.Text.Json.JsonSerializer.Deserialize<ActvnLoginRequest>(requestJson, jsonOptions);
+
+                TransmissionLogger.LogServer($"[SERVER] ACTVN Profile request - Username: {request.Username}");
+
+                var crawler = new Services.ActvnCrawlerService();
+                var loginResult = await crawler.LoginAsync(request.Username, request.Password);
+
+                ActvnProfileResponse response;
+                if (loginResult.Success)
+                {
+                    var info = await crawler.FetchStudentProfileAsync();
+                    response = new ActvnProfileResponse
+                    {
+                        Success = true,
+                        Message = "Lấy thông tin thành công",
+                        StudentInfo = new ActvnStudentInfo
+                        {
+                            StudentCode   = info.StudentCode,
+                            StudentName   = info.StudentName,
+                            Gender        = info.Gender,
+                            Birthday      = info.Birthday,
+                            BankAccount   = info.BankAccount,
+                            IdCard        = info.IdCard,
+                            BirthPlace    = info.BirthPlace,
+                            PersonalPhone = info.PersonalPhone,
+                            Email         = info.Email,
+                            EmergencyContact = info.EmergencyContact
+                        }
+                    };
+                    TransmissionLogger.LogServer($"[SERVER] ACTVN Profile OK - {info.StudentName}");
+                }
+                else
+                {
+                    response = new ActvnProfileResponse { Success = false, Message = loginResult.Message };
+                    TransmissionLogger.LogServer($"[SERVER] ACTVN Profile login failed: {loginResult.Message}");
+                }
+
+                await SendEncryptedResponse(response, stream, aes, iv);
+            }
+            catch (Exception ex)
+            {
+                TransmissionLogger.LogServer($"[SERVER] Error in HandleActvnProfile: {ex.Message}");
+                await SendEncryptedResponse(new ActvnProfileResponse { Success = false, Message = ex.Message }, stream, aes, iv);
+            }
+        }
+
+        private async Task HandleActvnLogin(string requestJson, System.Net.Sockets.NetworkStream stream, AES aes, byte[] iv)        {
             try
             {
                 var jsonOptions = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
@@ -510,10 +565,16 @@ namespace DataMasking.Network
                         Message = "Đăng nhập thành công",
                         StudentInfo = new ActvnStudentInfo
                         {
-                            StudentCode = studentInfo.StudentCode,
-                            StudentName = studentInfo.StudentName,
-                            Gender = studentInfo.Gender,
-                            Birthday = studentInfo.Birthday
+                            StudentCode      = studentInfo.StudentCode,
+                            StudentName      = studentInfo.StudentName,
+                            Gender           = studentInfo.Gender,
+                            Birthday         = studentInfo.Birthday,
+                            BankAccount      = studentInfo.BankAccount,
+                            IdCard           = studentInfo.IdCard,
+                            BirthPlace       = studentInfo.BirthPlace,
+                            PersonalPhone    = studentInfo.PersonalPhone,
+                            Email            = studentInfo.Email,
+                            EmergencyContact = studentInfo.EmergencyContact
                         }
                     };
                     TransmissionLogger.LogServer($"[SERVER] ACTVN Login successful - Student: {studentInfo.StudentName} ({studentInfo.StudentCode})");

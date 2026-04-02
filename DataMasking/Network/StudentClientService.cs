@@ -295,8 +295,61 @@ namespace DataMasking.Network
             }
         }
 
-        public async Task<Models.ActvnScheduleResponse> SendActvnScheduleRequestAsync(string username, string password)
+        public async Task<Models.ActvnProfileResponse> SendActvnProfileRequestAsync(string username, string password)
         {
+            try
+            {
+                TransmissionLogger.LogClient("=======================================================");
+                TransmissionLogger.LogClient($"[CLIENT] ACTVN Profile Request - Username: {username}");
+
+                using (TcpClient client = new TcpClient())
+                {
+                    await client.ConnectAsync(serverHost, serverPort);
+                    NetworkStream stream = client.GetStream();
+
+                    AESKey aesKey = new AESKey();
+                    RSA rsa = new RSA(serverPublicKey.N, serverPublicKey.E);
+                    byte[] encryptedAESKey = rsa.Encrypt(aesKey.Key);
+
+                    await stream.WriteAsync(BitConverter.GetBytes(encryptedAESKey.Length), 0, 4);
+                    await stream.WriteAsync(encryptedAESKey, 0, encryptedAESKey.Length);
+                    await stream.WriteAsync(aesKey.IV, 0, aesKey.IV.Length);
+
+                    var request = new Models.ActvnProfileRequest { Username = username, Password = password };
+                    string requestJson = System.Text.Json.JsonSerializer.Serialize(request, new System.Text.Json.JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+                    });
+
+                    AES aes = new AES(aesKey.Key);
+                    byte[] encryptedRequest = aes.EncryptCBC(Encoding.UTF8.GetBytes(requestJson), aesKey.IV);
+                    await stream.WriteAsync(BitConverter.GetBytes(encryptedRequest.Length), 0, 4);
+                    await stream.WriteAsync(encryptedRequest, 0, encryptedRequest.Length);
+
+                    byte[] responseLenBuf = new byte[4];
+                    await stream.ReadAsync(responseLenBuf, 0, 4);
+                    int responseLength = BitConverter.ToInt32(responseLenBuf, 0);
+
+                    byte[] encryptedResponse = new byte[responseLength];
+                    int totalRead = 0;
+                    while (totalRead < responseLength)
+                        totalRead += await stream.ReadAsync(encryptedResponse, totalRead, responseLength - totalRead);
+
+                    string responseJson = Encoding.UTF8.GetString(aes.DecryptCBC(encryptedResponse, aesKey.IV));
+                    TransmissionLogger.LogClient($"[CLIENT] Profile response received");
+
+                    return System.Text.Json.JsonSerializer.Deserialize<Models.ActvnProfileResponse>(responseJson,
+                        new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                }
+            }
+            catch (Exception ex)
+            {
+                TransmissionLogger.LogClient($"[CLIENT] Profile error: {ex.Message}");
+                return new Models.ActvnProfileResponse { Success = false, Message = ex.Message };
+            }
+        }
+
+        public async Task<Models.ActvnScheduleResponse> SendActvnScheduleRequestAsync(string username, string password)        {
             try
             {
                 TransmissionLogger.LogClient("=======================================================");

@@ -31,6 +31,10 @@ namespace DataMasking
         
         private bool isSelectAllMode = true; // Track select all/unselect all mode
         
+        // Personal info labels (dòng 2 trong pnlInfo)
+        private Label lblInfoBankAccount, lblInfoIdCard, lblInfoBirthPlace;
+        private Label lblInfoPhone, lblInfoEmail, lblInfoEmergency;
+        
         // Theme colors - Purple/Gold theme for Virtual Transcript
         private static readonly Color ThemeBg = Color.FromArgb(25, 20, 35);
         private static readonly Color ThemePanel = Color.FromArgb(45, 35, 60);
@@ -215,11 +219,11 @@ namespace DataMasking
             };
             pnlClientLog.Controls.Add(txtClientLog);
 
-            // Student Info Panel
+            // Student Info Panel - mở rộng để chứa cả thông tin cá nhân masked
             Panel pnlInfo = new Panel
             {
                 Location = new Point(20, 175),
-                Size = new Size(900, 60),
+                Size = new Size(900, 65),
                 BackColor = ThemePanel
             };
             this.Controls.Add(pnlInfo);
@@ -227,18 +231,29 @@ namespace DataMasking
             lblStudentInfo = new Label
             {
                 Text = "Nhấn 'Tải điểm' để bắt đầu...",
-                Location = new Point(20, 15),
-                Size = new Size(860, 30),
+                Location = new Point(10, 8),
+                Size = new Size(880, 22),
                 Font = new Font("Segoe UI", 10),
                 ForeColor = ThemeTextSecondary
             };
             pnlInfo.Controls.Add(lblStudentInfo);
 
+            // Dòng 2: thông tin cá nhân masked
+            lblInfoBankAccount = MakeInfoLabel("STK: --", 10, 36);
+            lblInfoIdCard      = MakeInfoLabel("CMTND: --", 155, 36);
+            lblInfoBirthPlace  = MakeInfoLabel("Nơi sinh: --", 310, 36);
+            lblInfoPhone       = MakeInfoLabel("SĐT: --", 480, 36);
+            lblInfoEmail       = MakeInfoLabel("Email: --", 590, 36);
+            lblInfoEmergency   = MakeInfoLabel("Liên hệ khẩn: --", 730, 36);
+            foreach (var lbl in new[] { lblInfoBankAccount, lblInfoIdCard, lblInfoBirthPlace,
+                                         lblInfoPhone, lblInfoEmail, lblInfoEmergency })
+                pnlInfo.Controls.Add(lbl);
+
             // Scores DataGridView with checkbox
             dgvScores = new DataGridView
             {
-                Location = new Point(20, 250),
-                Size = new Size(900, 400),
+                Location = new Point(20, 255),
+                Size = new Size(900, 395),
                 AllowUserToAddRows = false,
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
                 SelectionMode = DataGridViewSelectionMode.FullRowSelect
@@ -279,10 +294,121 @@ namespace DataMasking
                 ForeColor = Color.FromArgb(255, 215, 0)
             };
             pnlSummary.Controls.Add(lblPredictedCPA);
+
+            // ── Personal Info Panel (bên phải, dưới client log)
+            BuildPersonalInfoPanel();
         }
 
-        private Button CreateModernButton(string text, Color bgColor, Color fgColor, int width, int height)
+        private void BuildPersonalInfoPanel()
         {
+            // Labels đã được tạo inline trong InitializeComponents, không cần panel riêng
+        }
+
+        private Label MakeInfoLabel(string text, int x, int y)
+        {
+            return new Label
+            {
+                Text = text,
+                Location = new Point(x, y),
+                AutoSize = true,
+                Font = new Font("Segoe UI", 8),
+                ForeColor = ThemeTextSecondary
+            };
+        }
+
+        private async Task LoadProfileData()
+        {
+            if (!SessionManager.IsLoggedIn || serverKeyPair == null) return;
+
+            try
+            {
+                string username = SessionManager.Username;
+                string password = SessionManager.Password;
+
+                LogClient("[CLIENT] === LOADING ACTVN PROFILE ===");
+                var response = await clientService.SendActvnProfileRequestAsync(username, password);
+
+                if (response != null && response.Success && response.StudentInfo != null)
+                {
+                    var info = response.StudentInfo;
+                    LogClient($"[CLIENT] Profile loaded: {info.StudentName}");
+
+                    // Thông tin cá nhân nhạy cảm - hiển thị masked ở dòng 2 của pnlInfo
+                    lblInfoBankAccount.Text = $"STK: {MaskMiddle(info.BankAccount, 4, 4)}";
+                    lblInfoIdCard.Text      = $"CMTND: {MaskMiddle(info.IdCard, 3, 3)}";
+                    lblInfoBirthPlace.Text  = $"Nơi sinh: {MaskBirthPlace(info.BirthPlace)}";
+                    lblInfoPhone.Text       = $"SĐT: {MaskPhone(info.PersonalPhone)}";
+                    lblInfoEmail.Text       = $"Email: {MaskEmail(info.Email)}";
+                    lblInfoEmergency.Text   = $"Liên hệ khẩn: {MaskMiddle(info.EmergencyContact, 2, 0)}";
+
+                    foreach (var lbl in new[] { lblInfoBankAccount, lblInfoIdCard,
+                                                 lblInfoPhone, lblInfoEmail, lblInfoEmergency })
+                        lbl.ForeColor = ThemeTextPrimary;
+
+                    LogClient("[CLIENT] Profile display updated with masked data");
+                }
+                else
+                {
+                    string msg = response?.Message ?? "Không có phản hồi";
+                    LogClient($"[CLIENT] Profile load failed: {msg}");
+                    MessageBox.Show($"Không tải được thông tin cá nhân:\n{msg}", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogClient($"[CLIENT] Profile error: {ex.Message}");
+            }
+        }
+
+        // ── Masking helpers ──────────────────────────────────────────────────
+
+        /// <summary>Giữ <paramref name="keepStart"/> ký tự đầu và <paramref name="keepEnd"/> ký tự cuối, mask phần giữa.</summary>
+        private string MaskMiddle(string value, int keepStart, int keepEnd)
+        {
+            if (string.IsNullOrEmpty(value)) return "--";
+            int maskLen = value.Length - keepStart - keepEnd;
+            if (maskLen <= 0) return new string('*', value.Length);
+            return value.Substring(0, keepStart)
+                 + new string('*', maskLen)
+                 + (keepEnd > 0 ? value.Substring(value.Length - keepEnd) : "");
+        }
+
+        private string MaskName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return "--";
+            var parts = name.Split(' ');
+            // Giữ nguyên họ, mask tên đệm và tên
+            if (parts.Length == 1) return parts[0][0] + new string('*', parts[0].Length - 1);
+            string result = parts[0]; // họ giữ nguyên
+            for (int i = 1; i < parts.Length - 1; i++)
+                result += " " + (parts[i].Length > 0 ? parts[i][0] + new string('*', parts[i].Length - 1) : "");
+            string lastName = parts[^1];
+            result += " " + (lastName.Length > 0 ? lastName[0] + new string('*', lastName.Length - 1) : "");
+            return result;
+        }
+
+        private string MaskPhone(string phone)
+        {
+            if (string.IsNullOrEmpty(phone) || phone.Length < 4) return "--";
+            return new string('*', phone.Length - 4) + phone.Substring(phone.Length - 4);
+        }
+
+        private string MaskEmail(string email)
+        {
+            if (string.IsNullOrEmpty(email)) return "--";
+            int at = email.IndexOf('@');
+            if (at <= 1) return email;
+            return email[0] + new string('*', at - 1) + email.Substring(at);
+        }
+
+        private string MaskBirthPlace(string place)
+        {
+            if (string.IsNullOrEmpty(place)) return "--";
+            // Chỉ hiện 10 ký tự đầu
+            return place.Length <= 10 ? place : place.Substring(0, 10) + "...";
+        }
+
+        private Button CreateModernButton(string text, Color bgColor, Color fgColor, int width, int height)        {
             Button btn = new Button
             {
                 Text = text,
@@ -336,7 +462,8 @@ namespace DataMasking
                 return;
             }
 
-            await LoadScoresData();
+            // Load cả điểm và thông tin cá nhân song song
+            await Task.WhenAll(LoadScoresData(), LoadProfileData());
         }
 
         private async Task LoadScoresData()

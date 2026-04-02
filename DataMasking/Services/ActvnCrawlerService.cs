@@ -96,10 +96,16 @@ namespace DataMasking.Services
 
                 return new StudentInfo
                 {
-                    StudentCode = GetTextById(doc, "txtMaSV") ?? "",
-                    StudentName = GetTextById(doc, "txtHoTen") ?? "",
-                    Gender = GetTextById(doc, "txtGioiTinh") ?? "",
-                    Birthday = maskedBirthday
+                    StudentCode  = GetTextById(doc, "txtMaSV")    ?? "",
+                    StudentName  = GetTextById(doc, "txtHoTen")   ?? "",
+                    Gender       = GetTextById(doc, "txtGioiTinh") ?? "",
+                    Birthday     = maskedBirthday,
+                    BankAccount  = GetTextById(doc, "txtSoTaiKhoanNganHang") ?? "",
+                    IdCard       = GetTextById(doc, "txtCMTND")   ?? "",
+                    BirthPlace   = GetTextById(doc, "txtNoiSinh") ?? "",
+                    PersonalPhone = GetTextById(doc, "txtDienThoaiCaNhan") ?? "",
+                    Email        = GetTextById(doc, "txtEmail")   ?? "",
+                    EmergencyContact = GetTextById(doc, "txtKhiCanBaoTinChoAi") ?? ""
                 };
             }
             catch (Exception ex)
@@ -500,6 +506,12 @@ namespace DataMasking.Services
         public string StudentName { get; set; }
         public string Gender { get; set; }
         public string Birthday { get; set; }
+        public string BankAccount { get; set; }
+        public string IdCard { get; set; }
+        public string BirthPlace { get; set; }
+        public string PersonalPhone { get; set; }
+        public string Email { get; set; }
+        public string EmergencyContact { get; set; }
     }
 
     public class StudentScheduleResponse

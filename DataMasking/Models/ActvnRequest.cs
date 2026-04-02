@@ -37,6 +37,26 @@ namespace DataMasking.Models
         public string StudentName { get; set; }
         public string Gender { get; set; }
         public string Birthday { get; set; }
+        public string BankAccount { get; set; }
+        public string IdCard { get; set; }
+        public string BirthPlace { get; set; }
+        public string PersonalPhone { get; set; }
+        public string Email { get; set; }
+        public string EmergencyContact { get; set; }
+    }
+
+    public class ActvnProfileRequest
+    {
+        public string Action { get; set; } = "actvn_profile";
+        public string Username { get; set; }
+        public string Password { get; set; }
+    }
+
+    public class ActvnProfileResponse
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; }
+        public ActvnStudentInfo StudentInfo { get; set; }
     }
 
     public class ActvnCalendarEvent
